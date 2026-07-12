@@ -12,6 +12,9 @@ export interface OutboundResult {
 }
 
 export interface SendTextArgs {
+  /** Já sanitizado pelo caller (ex.: `sanitizePhoneForMeta`) — o
+   *  provedor não sanitiza, só tenta variantes de formatação em cima
+   *  do valor recebido. */
   to: string;
   text: string;
   contextProviderMessageId?: string;
@@ -20,6 +23,7 @@ export interface SendTextArgs {
 export type OutboundMediaKind = 'image' | 'video' | 'document' | 'audio';
 
 export interface SendMediaArgs {
+  /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
   to: string;
   kind: OutboundMediaKind;
   link: string;
@@ -34,6 +38,7 @@ export interface OutboundButton {
 }
 
 export interface SendInteractiveButtonsArgs {
+  /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
   to: string;
   bodyText: string;
   headerText?: string;
@@ -54,6 +59,7 @@ export interface OutboundListSection {
 }
 
 export interface SendInteractiveListArgs {
+  /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
   to: string;
   bodyText: string;
   buttonLabel: string;
@@ -63,6 +69,9 @@ export interface SendInteractiveListArgs {
   contextProviderMessageId?: string;
 }
 
+/** Contrato: todo `to` chega já sanitizado pelo caller (ex.:
+ *  `sanitizePhoneForMeta` antes de chamar a Meta). O provedor não
+ *  re-sanitiza — só lida com variantes de formatação/retry. */
 export interface ChannelSender {
   sendText(args: SendTextArgs): Promise<OutboundResult>;
   sendMedia(args: SendMediaArgs): Promise<OutboundResult>;
