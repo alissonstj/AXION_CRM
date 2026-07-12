@@ -5,11 +5,13 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
   sendMediaMessage: vi.fn(),
   sendInteractiveButtons: vi.fn(),
   sendInteractiveList: vi.fn(),
+  verifyPhoneNumber: vi.fn(),
 }));
 
 import {
   sendTextMessage,
   sendMediaMessage,
+  verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { MetaProvider } from './meta';
 
@@ -113,5 +115,30 @@ describe('MetaProvider.parseWebhook', () => {
       statuses: [{ id: 'wamid.s', status: 'delivered', timestamp: '1700000003', recipient_id: '1' }],
     } }] }] };
     expect(provider.parseWebhook(statusPayload)).toEqual([]);
+  });
+});
+
+describe('MetaProvider lifecycle', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('getConnectionState returns connected when Meta verifies the number', async () => {
+    vi.mocked(verifyPhoneNumber).mockResolvedValue({ id: 'PNID', display_phone_number: '+1 555' });
+    const provider = new MetaProvider(cfg);
+    const state = await provider.getConnectionState();
+    expect(state.status).toBe('connected');
+    expect(verifyPhoneNumber).toHaveBeenCalledWith({ phoneNumberId: 'PNID', accessToken: 'TOKEN' });
+  });
+
+  it('getConnectionState returns error when Meta rejects', async () => {
+    vi.mocked(verifyPhoneNumber).mockRejectedValue(new Error('Invalid OAuth token'));
+    const provider = new MetaProvider(cfg);
+    const state = await provider.getConnectionState();
+    expect(state.status).toBe('error');
+    expect(state.detail).toContain('Invalid OAuth token');
+  });
+
+  it('disconnect is a no-op for Meta (does not throw)', async () => {
+    const provider = new MetaProvider(cfg);
+    await expect(provider.disconnect()).resolves.toBeUndefined();
   });
 });

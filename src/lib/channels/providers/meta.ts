@@ -3,6 +3,7 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils';
 import type {
@@ -113,13 +114,24 @@ export class MetaProvider implements ChannelProvider {
     return out;
   }
   async connect(): Promise<ConnectionState> {
-    throw new Error('not implemented — Task 4');
+    return this.getConnectionState();
   }
+
   async getConnectionState(): Promise<ConnectionState> {
-    throw new Error('not implemented — Task 4');
+    try {
+      const info = await verifyPhoneNumber({
+        phoneNumberId: this.config.phoneNumberId,
+        accessToken: this.config.accessToken,
+      });
+      return { status: 'connected', detail: info.display_phone_number };
+    } catch (err) {
+      return { status: 'error', detail: err instanceof Error ? err.message : 'Meta verification failed' };
+    }
   }
+
   async disconnect(): Promise<void> {
-    throw new Error('not implemented — Task 4');
+    // Meta: sem sessão para encerrar — o reset de credenciais segue na
+    // rota DELETE /api/whatsapp/config. No-op intencional.
   }
 }
 
