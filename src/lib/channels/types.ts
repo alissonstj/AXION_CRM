@@ -1,0 +1,106 @@
+// Tipos e contratos da camada de provedor de canal.
+// Nenhuma lógica aqui — só a costura que Meta e (na Fase 2) Evolution implementam.
+
+export type ChannelProviderId = 'meta' | 'evolution';
+
+/** Resultado de um envio. `workingRecipient` só vem preenchido quando o
+ *  provedor corrigiu o número (ex.: retry de variante da Meta) — o caller
+ *  persiste de volta no contato quando difere do enviado. */
+export interface OutboundResult {
+  providerMessageId: string;
+  workingRecipient?: string;
+}
+
+export interface SendTextArgs {
+  to: string;
+  text: string;
+  contextProviderMessageId?: string;
+}
+
+export type OutboundMediaKind = 'image' | 'video' | 'document' | 'audio';
+
+export interface SendMediaArgs {
+  to: string;
+  kind: OutboundMediaKind;
+  link: string;
+  caption?: string;
+  filename?: string;
+  contextProviderMessageId?: string;
+}
+
+export interface OutboundButton {
+  id: string;
+  title: string;
+}
+
+export interface SendInteractiveButtonsArgs {
+  to: string;
+  bodyText: string;
+  headerText?: string;
+  footerText?: string;
+  buttons: OutboundButton[];
+  contextProviderMessageId?: string;
+}
+
+export interface OutboundListRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface OutboundListSection {
+  title?: string;
+  rows: OutboundListRow[];
+}
+
+export interface SendInteractiveListArgs {
+  to: string;
+  bodyText: string;
+  buttonLabel: string;
+  headerText?: string;
+  footerText?: string;
+  sections: OutboundListSection[];
+  contextProviderMessageId?: string;
+}
+
+export interface ChannelSender {
+  sendText(args: SendTextArgs): Promise<OutboundResult>;
+  sendMedia(args: SendMediaArgs): Promise<OutboundResult>;
+  sendInteractiveButtons(args: SendInteractiveButtonsArgs): Promise<OutboundResult>;
+  sendInteractiveList(args: SendInteractiveListArgs): Promise<OutboundResult>;
+}
+
+export type InboundKind =
+  | 'text' | 'image' | 'video' | 'document' | 'audio'
+  | 'location' | 'interactive_reply' | 'reaction';
+
+/** Forma interna comum que o ingest consome, independente de provedor. */
+export interface NormalizedInbound {
+  from: string;
+  contactName?: string;
+  providerMessageId: string;
+  timestamp: Date;
+  kind: InboundKind;
+  text?: string | null;
+  mediaUrl?: string | null;
+  interactiveReplyId?: string | null;
+  reaction?: { targetProviderMessageId: string; emoji: string } | null;
+  replyToProviderMessageId?: string | null;
+}
+
+export interface ConnectionState {
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  /** Data-URL do QR, só durante `connecting` (Evolution). */
+  qrCode?: string;
+  detail?: string;
+}
+
+export interface ChannelProvider {
+  readonly id: ChannelProviderId;
+  readonly sender: ChannelSender;
+  /** Traduz o payload de webhook do provedor para a forma interna. */
+  parseWebhook(payload: unknown): NormalizedInbound[];
+  connect(): Promise<ConnectionState>;
+  getConnectionState(): Promise<ConnectionState>;
+  disconnect(): Promise<void>;
+}
