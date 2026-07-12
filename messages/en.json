@@ -884,6 +884,7 @@
       "edit": "Edit",
       "duplicate": "Duplicate",
       "viewLogs": "View Logs",
+      "openMenu": "Open menu",
       "delete": "Delete",
       "cancel": "Cancel",
       "deleteTitle": "Delete automation",
@@ -978,6 +979,7 @@
       "replyIdsHint": "yes, no, more_info",
       "replyIdsHelp": "Comma-separated button/list-row ids to match, exact. Use the same ids you set on a Send Buttons / Send List step.",
       "schedule": "Schedule",
+      "schedulePlaceholder": "Cron expression or HH:mm",
       "scheduleHint": "Cron expression (e.g. 0 9 * * 1-5)",
       "active": "Active",
       "activeAria": "Active",
@@ -1031,6 +1033,8 @@
         "no": "No"
       },
       "addStep": "Add step",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
       "config": {
         "messageText": "Message text",
         "placeholderMessageText": "Hi! Thanks for reaching out…",

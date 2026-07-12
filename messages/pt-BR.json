@@ -1108,5 +1108,330 @@
       "toastDeleteFailed": "Não foi possível excluir o campo.",
       "toastDeleted": "\"{name}\" excluído."
     }
+  },
+  "Pipelines": {
+    "page": {
+      "selectPipeline": "Selecionar funil",
+      "noPipelinesYet": "Nenhum funil ainda",
+      "managePipelines": "Gerenciar funis",
+      "addPipeline": "Adicionar funil",
+      "addDeal": "Adicionar negócio",
+      "createToStartTracking": "Crie um funil para começar a acompanhar negócios",
+      "createPipeline": "Criar funil",
+      "newPipeline": "Novo funil",
+      "pipelineName": "Nome do funil",
+      "pipelineNamePlaceholder": "ex.: Vendas Corporativas",
+      "defaultStagesDesc": "As etapas padrão (Novo Lead → Ganho) serão criadas automaticamente.",
+      "cancel": "Cancelar",
+      "creating": "Criando...",
+      "createPipelineBtn": "Criar funil",
+      "toastFailedLoadPipelines": "Falha ao carregar funis",
+      "toastFailedMoveDeal": "Falha ao mover negócio",
+      "toastFailedCreatePipeline": "Falha ao criar funil",
+      "toastPipelineCreated": "Funil criado",
+      "toastNotLinkedToAccount": "Seu perfil não está vinculado a uma conta."
+    },
+    "board": {
+      "dropDealHere": "Solte um negócio aqui",
+      "addDeal": "Adicionar negócio"
+    },
+    "card": {
+      "noContact": "Sem contato",
+      "won": "Ganho",
+      "lost": "Perdido"
+    },
+    "form": {
+      "editDeal": "Editar negócio",
+      "newDeal": "Novo negócio",
+      "title": "Título",
+      "titlePlaceholder": "Título do negócio",
+      "contact": "Contato",
+      "selectContact": "Selecione um contato",
+      "linkToConversation": "Vincular à conversa",
+      "value": "Valor",
+      "currency": "Moeda",
+      "expectedCloseDate": "Data prevista de fechamento",
+      "stage": "Etapa",
+      "assignedTo": "Atribuído a",
+      "unassigned": "Não atribuído",
+      "notes": "Notas",
+      "notesPlaceholder": "Adicionar notas...",
+      "status": "Status",
+      "markAsWon": "Marcar como ganho",
+      "markAsLost": "Marcar como perdido",
+      "reopenDeal": "Reabrir negócio",
+      "cancel": "Cancelar",
+      "saving": "Salvando...",
+      "saveChanges": "Salvar alterações",
+      "createDeal": "Criar negócio",
+      "deletePrompt": "Excluir este negócio?",
+      "confirm": "Confirmar",
+      "deleting": "Excluindo...",
+      "deleteDeal": "Excluir negócio",
+      "toastRequired": "Título, contato e etapa são obrigatórios",
+      "toastFailedSave": "Falha ao salvar negócio",
+      "toastNotSignedIn": "Não conectado",
+      "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
+      "toastFailedCreate": "Falha ao criar negócio",
+      "toastUpdated": "Negócio atualizado",
+      "toastCreated": "Negócio criado",
+      "toastFailedStatus": "Falha ao atualizar status do negócio",
+      "toastMarkedWon": "Marcado como ganho",
+      "toastMarkedLost": "Marcado como perdido",
+      "toastReopened": "Negócio reaberto",
+      "toastFailedDelete": "Falha ao excluir negócio",
+      "toastDeleted": "Negócio excluído"
+    },
+    "settings": {
+      "managePipeline": "Gerenciar funil",
+      "deletePipeline": "Excluir funil",
+      "deletePipelineDesc": "Isso arquivará todos os negócios deste funil. Não pode ser desfeito.",
+      "cancel": "Cancelar",
+      "deleting": "Excluindo...",
+      "deletePipelineBtn": "Excluir funil",
+      "pipelineName": "Nome do funil",
+      "stages": "Etapas",
+      "newStageNamePlaceholder": "Nome da nova etapa",
+      "add": "Adicionar",
+      "createNewPipeline": "Criar um novo funil",
+      "saving": "Salvando...",
+      "saveChanges": "Salvar alterações",
+      "dragToReorder": "Arraste para reordenar",
+      "changeColor": "Alterar cor",
+      "toastFailedSave": "Falha ao salvar funil",
+      "toastSaved": "Funil salvo",
+      "toastFailedAddStage": "Falha ao adicionar etapa",
+      "toastMoveOrDeleteDeals": "Mova ou exclua os negócios desta etapa primeiro",
+      "toastFailedDeleteStage": "Falha ao excluir etapa",
+      "toastFailedDeletePipeline": "Falha ao excluir funil",
+      "toastDeleted": "Funil excluído"
+    },
+    "analytics": {
+      "totalDeals": "Total de negócios",
+      "totalDealsTooltip": "Contagem de todos os negócios deste funil que não estão marcados como perdidos. Negócios ganhos continuam incluídos.",
+      "pipelineValue": "Valor do funil",
+      "pipelineValueTooltip": "Soma dos valores de todos os negócios deste funil, exceto os marcados como perdidos.",
+      "avgDealSize": "Ticket médio",
+      "avgDealSizeTooltip": "Valor do funil dividido pelo total de negócios — o valor médio de um único negócio não perdido.",
+      "weightedValue": "Valor ponderado",
+      "weightedValueTooltip": "Receita esperada: o valor de cada negócio aberto × a probabilidade da sua etapa. A primeira etapa é ≈ 10%, as etapas avançam até 90%, Ganho = 100%. Negócios perdidos são excluídos.",
+      "wonThisMonth": "Ganhos este mês",
+      "wonThisMonthTooltip": "Negócios marcados como ganhos desde o primeiro dia do mês atual.",
+      "lostThisMonth": "Perdidos este mês",
+      "lostThisMonthTooltip": "Negócios marcados como perdidos desde o primeiro dia do mês atual.",
+      "howCalculated": "Como {label} é calculado"
+    }
+  },
+  "Automations": {
+    "list": {
+      "title": "Automações",
+      "subtitle": "Crie fluxos de trabalho que reagem automaticamente a eventos do WhatsApp®.",
+      "create": "Criar automação",
+      "retry": "Tentar novamente",
+      "templatesTitle": "Modelos rápidos",
+      "emptyTitle": "Nenhuma automação ainda",
+      "emptyDesc": "Escolha um modelo acima ou crie uma do zero.",
+      "runs": "{count} execução",
+      "runsPlural": "{count} execuções",
+      "lastRun": "última {time}",
+      "activate": "Ativar",
+      "deactivate": "Desativar",
+      "edit": "Editar",
+      "duplicate": "Duplicar",
+      "viewLogs": "Ver registros",
+      "openMenu": "Abrir menu",
+      "delete": "Excluir",
+      "cancel": "Cancelar",
+      "deleteTitle": "Excluir automação",
+      "deleteDesc": "Isso remove permanentemente {name} e seu histórico de execuções. Não pode ser desfeito.",
+      "toasts": {
+        "activated": "Automação ativada",
+        "paused": "Automação pausada",
+        "duplicated": "Automação duplicada",
+        "deleted": "Automação excluída",
+        "updateError": "Falha ao atualizar",
+        "duplicateError": "Falha ao duplicar",
+        "deleteError": "Falha ao excluir"
+      }
+    },
+    "edit": {
+      "loading": "Carregando...",
+      "loadError": "Falha ao carregar ({status})",
+      "back": "Voltar para Automações"
+    },
+    "logs": {
+      "title": "Registros de execução",
+      "loadError": "Falha ao carregar registros",
+      "emptyTitle": "Nenhuma execução ainda",
+      "emptyDesc": "Acione esta automação para ver execuções aqui.",
+      "unknownContact": "Contato desconhecido",
+      "step": "{count} etapa",
+      "stepPlural": "{count} etapas",
+      "noSteps": "Nenhuma etapa registrada.",
+      "status": {
+        "success": "sucesso",
+        "partial": "parcial",
+        "failed": "falha"
+      },
+      "back": "Voltar",
+      "backAria": "Voltar"
+    },
+    "builder": {
+      "steps": {
+        "send_message": "Enviar mensagem",
+        "send_buttons": "Enviar botões",
+        "send_list": "Enviar lista",
+        "send_template": "Enviar modelo",
+        "add_tag": "Adicionar tag",
+        "remove_tag": "Remover tag",
+        "assign_conversation": "Atribuir conversa",
+        "update_contact_field": "Atualizar campo do contato",
+        "create_deal": "Criar negócio",
+        "wait": "Aguardar",
+        "condition": "Condição (Se/Senão)",
+        "send_webhook": "Enviar webhook",
+        "close_conversation": "Encerrar conversa"
+      },
+      "triggers": {
+        "new_message_received": {
+          "label": "Nova mensagem recebida",
+          "hint": "Qualquer mensagem recebida"
+        },
+        "first_inbound_message": {
+          "label": "Primeira mensagem do contato",
+          "hint": "Primeira vez que este contato te envia mensagem (funciona também para contatos adicionados manualmente)"
+        },
+        "keyword_match": {
+          "label": "Correspondência de palavra-chave",
+          "hint": "A mensagem contém palavra(s)-chave específica(s)"
+        },
+        "interactive_reply": {
+          "label": "Resposta de botão / lista",
+          "hint": "O cliente toca em um botão ou item de lista cujo id corresponde — encadeie menus entre automações"
+        },
+        "new_contact_created": {
+          "label": "Novo contato criado",
+          "hint": "Quando um contato é criado automaticamente a partir de uma mensagem recebida"
+        },
+        "conversation_assigned": {
+          "label": "Conversa atribuída",
+          "hint": "Quando atribuída a um agente"
+        },
+        "tag_added": {
+          "label": "Tag adicionada",
+          "hint": "Quando uma tag é adicionada a um contato"
+        },
+        "time_based": {
+          "label": "Baseado em horário",
+          "hint": "Em uma programação recorrente"
+        }
+      },
+      "trigger": "Gatilho",
+      "triggerType": "Tipo de gatilho",
+      "keywords": "Palavras-chave",
+      "keywordsHint": "Lista separada por vírgulas (ex.: olá, ajuda, comprar)",
+      "replyIds": "IDs de resposta",
+      "replyIdsHint": "sim, não, mais_info",
+      "replyIdsHelp": "IDs de botão/item de lista separados por vírgula para correspondência exata. Use os mesmos ids definidos em uma etapa Enviar Botões / Enviar Lista.",
+      "schedule": "Programação",
+      "schedulePlaceholder": "Expressão cron ou HH:mm",
+      "scheduleHint": "Expressão cron (ex.: 0 9 * * 1-5)",
+      "active": "Ativo",
+      "activeAria": "Ativo",
+      "save": "Salvar",
+      "saveDraft": "Salvar rascunho",
+      "untitled": "Automação sem título",
+      "backToAutomations": "Voltar para automações",
+      "toasts": {
+        "saved": "Automação salva",
+        "created": "Automação criada",
+        "saveFailed": "Falha ao salvar"
+      },
+      "tags": {
+        "select": "Selecione uma tag…",
+        "placeholder": "ID da tag",
+        "unknown": "{id} (tag desconhecida)"
+      },
+      "fields": {
+        "name": "Nome",
+        "email": "E-mail",
+        "company": "Empresa",
+        "customFields": "Campos personalizados",
+        "unknown": "{id} (campo desconhecido)"
+      },
+      "agents": {
+        "select": "Selecione um agente…",
+        "placeholder": "ID do agente",
+        "unknown": "{id} (agente desconhecido)"
+      },
+      "pipelines": {
+        "pipelineLabel": "Funil",
+        "pipelineIdLabel": "ID do funil",
+        "stageLabel": "Etapa",
+        "stageIdLabel": "ID da etapa",
+        "selectPipeline": "Selecione um funil…",
+        "selectStage": "Selecione uma etapa…",
+        "selectPipelineFirst": "Selecione um funil primeiro…",
+        "unknownPipeline": "{id} (funil desconhecido)",
+        "unknownStage": "{id} (etapa desconhecida)"
+      },
+      "templates": {
+        "templateLabel": "Modelo",
+        "templateNameLabel": "Nome do modelo",
+        "languageLabel": "Idioma",
+        "select": "Selecione um modelo…",
+        "unknown": "{name} ({lang}) — fora da lista de aprovados",
+        "unknownLang": "desconhecido"
+      },
+      "branches": {
+        "yes": "Sim",
+        "no": "Não"
+      },
+      "addStep": "Adicionar etapa",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "config": {
+        "messageText": "Texto da mensagem",
+        "placeholderMessageText": "Olá! Obrigado por entrar em contato…",
+        "tagLabel": "Tag",
+        "modeLabel": "Modo",
+        "modes": {
+          "round_robin": "Rodízio",
+          "specific": "Agente específico"
+        },
+        "agentLabel": "Agente",
+        "fieldLabel": "Campo",
+        "valueLabel": "Valor",
+        "placeholderValue": "Texto ou {{ vars.x }} / {{ message.text }}",
+        "titleLabel": "Título",
+        "amountLabel": "Quantidade",
+        "unitLabel": "Unidade",
+        "units": {
+          "minutes": "Minutos",
+          "hours": "Horas",
+          "days": "Dias"
+        },
+        "subjectLabel": "Assunto",
+        "subjects": {
+          "tag_presence": "Presença de tag",
+          "contact_field": "Campo do contato",
+          "message_content": "Conteúdo da mensagem",
+          "time_of_day": "Horário do dia"
+        },
+        "operandLabel": "Operando",
+        "placeholderTime": "HH:mm-HH:mm",
+        "placeholderContact": "nome / e-mail / empresa",
+        "placeholderTag": "id da tag",
+        "urlLabel": "URL",
+        "headersLabel": "Cabeçalhos",
+        "placeholderHeaders": "{\"Authorization\": \"Bearer ...\"}",
+        "bodyTemplateLabel": "Modelo do corpo",
+        "placeholderBody": "{\"id\": \"{{ contact.id }}\"}",
+        "matchType": "Tipo de correspondência",
+        "matchContains": "Contém",
+        "matchExact": "Exata",
+        "closeConversationHint": "Define o status da conversa como \"fechada\". Não requer configuração."
+      }
+    }
   }
 }
