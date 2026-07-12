@@ -92,6 +92,14 @@ export interface NormalizedInbound {
   kind: InboundKind;
   text?: string | null;
   mediaUrl?: string | null;
+  /** Raw base64 media bytes, only set by providers that embed media
+   *  directly in the webhook (Evolution) rather than referencing it by
+   *  id (Meta). The route handler decodes + uploads this to Storage
+   *  and sets `mediaUrl` before calling `ingestInbound` — never read
+   *  by `ingestInbound` itself. */
+  mediaBase64?: string | null;
+  mediaMimeType?: string | null;
+  mediaFileName?: string | null;
   interactiveReplyId?: string | null;
   reaction?: { targetProviderMessageId: string; emoji: string } | null;
   replyToProviderMessageId?: string | null;

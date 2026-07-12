@@ -285,6 +285,16 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /** 'meta' | 'evolution' — added migration 037. Absent on rows written
+   *  before that migration ran, so treat undefined as 'meta'. */
+  provider?: 'meta' | 'evolution';
+  evolution_instance_name?: string;
+  evolution_connection_state?: string;
+  evolution_connected_at?: string;
+  evolution_instance_token?: string;
+  evolution_qr_code?: string;
+  evolution_qr_updated_at?: string;
+  evolution_last_error?: string;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
