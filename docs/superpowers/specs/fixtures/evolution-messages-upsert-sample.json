@@ -1,0 +1,85 @@
+[
+  {
+    "event": "messages.upsert",
+    "instance": "axion-test",
+    "data": {
+      "key": {
+        "remoteJid": "5511900000001@s.whatsapp.net",
+        "remoteJidAlt": "5511900000001@s.whatsapp.net",
+        "fromMe": true,
+        "id": "ANON0000000000000000000000000000",
+        "participant": "",
+        "addressingMode": "lid"
+      },
+      "pushName": "Test Agent",
+      "status": "SERVER_ACK",
+      "message": {
+        "conversation": "Teste"
+      },
+      "messageType": "conversation",
+      "messageTimestamp": 1783886962,
+      "instanceId": "2ff163c0-9596-4879-9693-3f874afdf463",
+      "source": "android"
+    },
+    "sender": "5511900000001@s.whatsapp.net"
+  },
+  {
+    "event": "messages.upsert",
+    "instance": "axion-test",
+    "data": {
+      "key": {
+        "remoteJid": "5511900000002@s.whatsapp.net",
+        "remoteJidAlt": "5511900000002@s.whatsapp.net",
+        "fromMe": false,
+        "id": "ANON0000000000000000000000000001",
+        "participant": "",
+        "addressingMode": "lid"
+      },
+      "pushName": "Test Customer",
+      "status": "DELIVERY_ACK",
+      "message": {
+        "conversation": "Oiiiii teste",
+        "messageContextInfo": {
+          "threadId": [],
+          "deviceListMetadata": {
+            "senderKeyIndexes": [],
+            "recipientKeyIndexes": [],
+            "recipientKeyHash": "REDACTED (E2E crypto material, not needed for parseWebhook mapping)",
+            "recipientTimestamp": { "low": 1783886594, "high": 0, "unsigned": true }
+          },
+          "deviceListMetadataVersion": 2,
+          "messageSecret": "REDACTED (E2E crypto material, not needed for parseWebhook mapping)"
+        }
+      },
+      "messageType": "conversation",
+      "messageTimestamp": 1783887066,
+      "instanceId": "2ff163c0-9596-4879-9693-3f874afdf463",
+      "source": "android"
+    },
+    "sender": "5511900000001@s.whatsapp.net"
+  },
+  {
+    "event": "messages.upsert",
+    "instance": "axion-test",
+    "data": {
+      "key": {
+        "remoteJid": "5511900000002@s.whatsapp.net",
+        "remoteJidAlt": "5511900000002@s.whatsapp.net",
+        "fromMe": true,
+        "id": "ANON0000000000000000000000000002",
+        "participant": "",
+        "addressingMode": "lid"
+      },
+      "pushName": "Test Agent",
+      "status": "SERVER_ACK",
+      "message": {
+        "conversation": "1"
+      },
+      "messageType": "conversation",
+      "messageTimestamp": 1783887166,
+      "instanceId": "2ff163c0-9596-4879-9693-3f874afdf463",
+      "source": "android"
+    },
+    "sender": "5511900000001@s.whatsapp.net"
+  }
+]
