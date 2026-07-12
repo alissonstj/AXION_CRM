@@ -1229,6 +1229,24 @@
       "create": "Criar automação",
       "retry": "Tentar novamente",
       "templatesTitle": "Modelos rápidos",
+      "templates": {
+        "welcome_message": {
+          "name": "Mensagem de boas-vindas",
+          "description": "Responde automaticamente a contatos novos com uma saudação."
+        },
+        "out_of_office": {
+          "name": "Fora do expediente",
+          "description": "Responde automaticamente fora do horário para ninguém ficar esperando."
+        },
+        "lead_qualifier": {
+          "name": "Qualificador de leads",
+          "description": "Faz perguntas de qualificação para filtrar leads recebidos."
+        },
+        "follow_up_reminder": {
+          "name": "Lembrete de acompanhamento",
+          "description": "Envia um lembrete se o contato não respondeu em 24 horas."
+        }
+      },
       "emptyTitle": "Nenhuma automação ainda",
       "emptyDesc": "Escolha um modelo acima ou crie uma do zero.",
       "runs": "{count} execução",
