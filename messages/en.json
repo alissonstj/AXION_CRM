@@ -249,7 +249,13 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "sendFailed": "Failed to send: {reason}",
+      "sendTemplateFailed": "Failed to send template: {reason}",
+      "networkError": "network error",
+      "waitForSend": "Wait for the message to finish sending",
+      "reactionFailed": "Reaction failed: {reason}",
+      "assignUpdateFailed": "Failed to update assignment"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -285,7 +291,16 @@
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "aiNotConfigured": "AI isn't set up yet — enable it in Settings → AI Assistant.",
+      "draftFailed": "Couldn't draft a reply.",
+      "draftEmpty": "The assistant didn't return a reply.",
+      "draftNetworkError": "Couldn't reach the AI assistant.",
+      "fileTooLarge": "File is {size} MB — {kind, select, image {image} video {video} document {document} audio {audio} other {file}} limit is {max} MB.",
+      "uploadFailed": "Upload failed.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "recordingUnsupported": "Voice recording isn't supported in this browser.",
+      "micDenied": "Microphone access denied or unavailable."
     },
     "bubble": {
       "photo": "Photo",
@@ -369,6 +384,7 @@
       "filterByTags": "Filter by tags",
       "clearAll": "Clear all",
       "noTagsYet": "No tags yet.",
+      "selectAllAria": "Select all contacts on this page",
       "selectedCount": "{count} selected",
       "clearSelection": "Clear",
       "deleteSelected": "Delete selected",
@@ -492,7 +508,8 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "networkError": "network error"
     },
     "importModal": {
       "title": "Import Contacts",
