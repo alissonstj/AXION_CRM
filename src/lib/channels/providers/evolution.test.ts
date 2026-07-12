@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as evolutionApi from '@/lib/whatsapp/evolution-api';
 import { EvolutionProvider } from './evolution';
+import {
+  TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE, IMAGE_INBOUND_SAMPLE, AUDIO_INBOUND_SAMPLE,
+  VIDEO_GROUP_SAMPLE, DOCUMENT_INBOUND_SAMPLE, LOCATION_INBOUND_SAMPLE, REACTION_INBOUND_SAMPLE,
+  BUTTON_REPLY_INBOUND_SAMPLE, CONNECTION_UPDATE_ERROR_SAMPLE,
+} from './__fixtures__/evolution-webhook-samples';
 
 const config = { baseUrl: 'http://evo.local', apiKey: 'instance-token', instanceName: 'axion-acc1' };
 
@@ -46,11 +51,80 @@ describe('EvolutionProvider.sender', () => {
 });
 
 describe('EvolutionProvider stubs', () => {
-  it('parseWebhook/connect/getConnectionState/disconnect throw not-implemented', async () => {
+  it('connect/getConnectionState/disconnect throw not-implemented', async () => {
     const provider = new EvolutionProvider(config);
-    expect(() => provider.parseWebhook({})).toThrow(/Task 4/);
     await expect(provider.connect()).rejects.toThrow(/Task 5/);
     await expect(provider.getConnectionState()).rejects.toThrow(/Task 5/);
     await expect(provider.disconnect()).rejects.toThrow(/Task 5/);
+  });
+});
+
+describe('EvolutionProvider.parseWebhook', () => {
+  const provider = new EvolutionProvider(config);
+
+  it('maps a text inbound', () => {
+    const [inbound] = provider.parseWebhook(TEXT_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      from: '5511900000002', contactName: 'Test Customer',
+      providerMessageId: 'ANON0000000000000000000000000001',
+      kind: 'text', text: 'Oiiiii teste',
+    });
+    expect(inbound.timestamp).toEqual(new Date(1783887066 * 1000));
+  });
+
+  it('drops fromMe echoes entirely', () => {
+    expect(provider.parseWebhook(FROM_ME_ECHO_SAMPLE)).toEqual([]);
+  });
+
+  it('drops group messages entirely', () => {
+    expect(provider.parseWebhook(VIDEO_GROUP_SAMPLE)).toEqual([]);
+  });
+
+  it('maps an image inbound with base64 + mimetype + caption', () => {
+    const [inbound] = provider.parseWebhook(IMAGE_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      kind: 'image', text: 'olha isso',
+      mediaBase64: 'ZmFrZS1pbWFnZS1ieXRlcw==', mediaMimeType: 'image/jpeg',
+    });
+  });
+
+  it('maps an audio inbound with no caption', () => {
+    const [inbound] = provider.parseWebhook(AUDIO_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      kind: 'audio', text: null,
+      mediaBase64: 'ZmFrZS1hdWRpby1ieXRlcw==', mediaMimeType: 'audio/ogg; codecs=opus',
+    });
+  });
+
+  it('maps a document inbound with fileName fallback for text', () => {
+    const [inbound] = provider.parseWebhook(DOCUMENT_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      kind: 'document', text: 'contrato.pdf',
+      mediaBase64: 'ZmFrZS1kb2MtYnl0ZXM=', mediaMimeType: 'application/pdf',
+      mediaFileName: 'contrato.pdf',
+    });
+  });
+
+  it('maps a location inbound to a human-readable text summary', () => {
+    const [inbound] = provider.parseWebhook(LOCATION_INBOUND_SAMPLE);
+    expect(inbound.kind).toBe('location');
+    expect(inbound.text).toBe('Praça da Sé - São Paulo, SP - -23.55,-46.63');
+  });
+
+  it('maps a reaction inbound', () => {
+    const [inbound] = provider.parseWebhook(REACTION_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      kind: 'reaction',
+      reaction: { targetProviderMessageId: 'ANON0000000000000000000000000001', emoji: '👍' },
+    });
+  });
+
+  it('maps a button-reply inbound', () => {
+    const [inbound] = provider.parseWebhook(BUTTON_REPLY_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({ kind: 'interactive_reply', interactiveReplyId: 'btn-1', text: 'Sim' });
+  });
+
+  it('returns [] for non-message events (connection.update, qrcode.updated)', () => {
+    expect(provider.parseWebhook(CONNECTION_UPDATE_ERROR_SAMPLE)).toEqual([]);
   });
 });

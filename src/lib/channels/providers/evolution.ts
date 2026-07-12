@@ -70,8 +70,24 @@ export class EvolutionProvider implements ChannelProvider {
     };
   }
 
-  parseWebhook(_payload: unknown): NormalizedInbound[] {
-    throw new Error('not implemented — Task 4');
+  parseWebhook(payload: unknown): NormalizedInbound[] {
+    const body = payload as EvolutionWebhookBody | null;
+    if (!body || body.event !== 'messages.upsert' || !body.data) return [];
+    const data = body.data;
+
+    // Never re-ingest our own sends, whether they came through this CRM
+    // or were sent directly from the linked phone (approved design
+    // decision — see design doc section 2, "parseWebhook").
+    if (data.key.fromMe) return [];
+
+    // Groups: remoteJid ends in @g.us and the real sender lives in
+    // participant/participantAlt, not remoteJid — out of scope (design
+    // doc, "Fora de escopo"). Skip rather than misattribute the group
+    // as if it were a 1:1 contact.
+    if (data.key.remoteJid.endsWith('@g.us')) return [];
+
+    const inbound = mapEvolutionMessage(data);
+    return inbound ? [inbound] : [];
   }
   async connect(): Promise<ConnectionState> {
     throw new Error('not implemented — Task 5');
@@ -109,6 +125,119 @@ async function sendEvolutionButtons(
   if (!response.ok) throw new Error(`Evolution API error: ${response.status}`);
   const data = await response.json();
   return { messageId: data.key?.id };
+}
+
+// ---- Shapes of Evolution's inbound webhook (subset we use) ----
+
+interface EvolutionMessageKey {
+  remoteJid: string;
+  remoteJidAlt?: string;
+  fromMe: boolean;
+  id: string;
+  participant?: string;
+  participantAlt?: string;
+}
+
+interface EvolutionMessageContent {
+  conversation?: string;
+  imageMessage?: { caption?: string; mimetype?: string };
+  videoMessage?: { caption?: string; mimetype?: string };
+  audioMessage?: { mimetype?: string };
+  documentMessage?: { caption?: string; fileName?: string; mimetype?: string };
+  locationMessage?: { degreesLatitude: number; degreesLongitude: number; name?: string; address?: string };
+  reactionMessage?: { key: { id: string }; text: string };
+  buttonsResponseMessage?: { selectedButtonId: string; selectedDisplayText?: string };
+  listResponseMessage?: { singleSelectReply?: { selectedRowId: string }; title?: string };
+  /** Sibling of the type-keyed object above, not nested inside it —
+   *  confirmed live for image/video/audio. Present only when the
+   *  instance's webhook was created with `base64: true` (Task 5). */
+  base64?: string;
+}
+
+interface EvolutionUpsertData {
+  key: EvolutionMessageKey;
+  pushName?: string;
+  message: EvolutionMessageContent;
+  messageType: string;
+  messageTimestamp: number;
+}
+
+interface EvolutionWebhookBody {
+  event: string;
+  instance: string;
+  data: EvolutionUpsertData;
+}
+
+/** Strips the @s.whatsapp.net / @lid suffix. Falls back to
+ *  `remoteJidAlt` when `remoteJid` doesn't look like a phone number —
+ *  covers the "LID" privacy addressing mode (documented limitation,
+ *  see design doc). */
+function extractPhone(key: EvolutionMessageKey): string {
+  const raw = key.remoteJid.split('@')[0];
+  if (/^\d+$/.test(raw)) return raw;
+  const alt = key.remoteJidAlt?.split('@')[0];
+  return alt && /^\d+$/.test(alt) ? alt : raw;
+}
+
+function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | null {
+  const base = {
+    from: extractPhone(data.key),
+    contactName: data.pushName,
+    providerMessageId: data.key.id,
+    timestamp: new Date(data.messageTimestamp * 1000),
+  };
+  const m = data.message;
+
+  switch (data.messageType) {
+    case 'conversation':
+      return { ...base, kind: 'text', text: m.conversation ?? null };
+    case 'imageMessage':
+      return {
+        ...base, kind: 'image', text: m.imageMessage?.caption ?? null,
+        mediaBase64: m.base64 ?? null, mediaMimeType: m.imageMessage?.mimetype ?? null,
+      };
+    case 'videoMessage':
+      return {
+        ...base, kind: 'video', text: m.videoMessage?.caption ?? null,
+        mediaBase64: m.base64 ?? null, mediaMimeType: m.videoMessage?.mimetype ?? null,
+      };
+    case 'audioMessage':
+      return {
+        ...base, kind: 'audio', text: null,
+        mediaBase64: m.base64 ?? null, mediaMimeType: m.audioMessage?.mimetype ?? null,
+      };
+    case 'documentMessage':
+      return {
+        ...base, kind: 'document',
+        text: m.documentMessage?.caption ?? m.documentMessage?.fileName ?? null,
+        mediaBase64: m.base64 ?? null, mediaMimeType: m.documentMessage?.mimetype ?? null,
+        mediaFileName: m.documentMessage?.fileName ?? null,
+      };
+    case 'locationMessage': {
+      const loc = m.locationMessage;
+      const text = loc
+        ? [loc.name, loc.address, `${loc.degreesLatitude},${loc.degreesLongitude}`].filter(Boolean).join(' - ')
+        : null;
+      return { ...base, kind: 'location', text };
+    }
+    case 'reactionMessage': {
+      const r = m.reactionMessage;
+      return {
+        ...base, kind: 'reaction',
+        reaction: r ? { targetProviderMessageId: r.key.id, emoji: r.text } : null,
+      };
+    }
+    case 'buttonsResponseMessage': {
+      const r = m.buttonsResponseMessage;
+      return { ...base, kind: 'interactive_reply', interactiveReplyId: r?.selectedButtonId ?? null, text: r?.selectedDisplayText ?? null };
+    }
+    case 'listResponseMessage': {
+      const r = m.listResponseMessage;
+      return { ...base, kind: 'interactive_reply', interactiveReplyId: r?.singleSelectReply?.selectedRowId ?? null, text: r?.title ?? null };
+    }
+    default:
+      return { ...base, kind: 'text', text: `[Unsupported message type: ${data.messageType}]` };
+  }
 }
 
 async function sendEvolutionList(
