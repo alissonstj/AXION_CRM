@@ -1,4 +1,4 @@
-# wacrm — CRM Template for WhatsApp
+# AXION CRM PRO
 
 > Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
 > sales pipelines, broadcasts, and no-code automations. Fork it, brand
@@ -11,12 +11,15 @@
 </p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](./LICENSE)
-[![CI](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml)
+[![CI](https://github.com/alissonstj/AXION_CRM/actions/workflows/ci.yml/badge.svg)](https://github.com/alissonstj/AXION_CRM/actions/workflows/ci.yml)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)](https://nextjs.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ecf8e?logo=supabase)](https://supabase.com)
-[![Stars](https://img.shields.io/github/stars/ArnasDon/wacrm?style=social)](https://github.com/ArnasDon/wacrm/stargazers)
+[![Stars](https://img.shields.io/github/stars/alissonstj/AXION_CRM?style=social)](https://github.com/alissonstj/AXION_CRM/stargazers)
 
-The marketing site and self-host docs live in a separate repo:
+AXION CRM PRO is a fork of the wacrm template. General self-host docs
+(Supabase, WhatsApp Business API setup, deploy) still live on the
+upstream template's docs site — the steps apply as-is since this fork
+shares the same stack:
 [ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)
 ([wacrm.tech](https://wacrm.tech)). This repo is the product —
 clone or fork it to run your own CRM.
@@ -79,9 +82,9 @@ in an afternoon and make yours.
 ## Quick start
 
 ```bash
-# Fork on GitHub first: https://github.com/ArnasDon/wacrm → Fork
-git clone https://github.com/<your-username>/wacrm.git
-cd wacrm
+# Fork on GitHub first: https://github.com/alissonstj/AXION_CRM → Fork
+git clone https://github.com/<your-username>/AXION_CRM.git
+cd AXION_CRM
 npm install
 cp .env.local.example .env.local   # fill in Supabase + Meta creds
 npm run dev
@@ -103,7 +106,7 @@ Open <http://localhost:3000>. You'll be redirected to `/login` (or
   </a>
 </p>
 
-**wacrm is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting).**
+**AXION CRM PRO is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting).**
 It's the path we test, document, and recommend — and the fastest way
 to get a production-grade CRM live without owning a VPS or a
 Kubernetes cluster.
@@ -132,14 +135,15 @@ Kubernetes cluster.
 Full walkthrough with screenshots:
 **[wacrm.tech/docs/deployment-hostinger](https://wacrm.tech/docs/deployment-hostinger)**.
 
-> _Note: wacrm is MIT-licensed and runs anywhere Node.js does
+> _Note: AXION CRM PRO is MIT-licensed and runs anywhere Node.js does
 > (Vercel, Railway, your own VPS). Hostinger is recommended, not
 > required._
 
 ## Documentation
 
 Full self-host documentation — Supabase migrations, WhatsApp Business
-API config, and production deploy — lives at
+API config, and production deploy — lives on the upstream template's
+docs site (the steps still apply, this fork shares the same stack):
 **[wacrm.tech/docs](https://wacrm.tech/docs)**
 (source: [ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)).
 
