@@ -1120,6 +1120,21 @@
       "backToFlows": "← Back to flows",
       "loadError": "Couldn't load flow."
     },
+    "header": {
+      "backToFlows": "Back to Flows",
+      "flowNamePlaceholder": "Flow name",
+      "flowNameAria": "Flow name",
+      "unsavedChangesTitle": "Unsaved changes — hit Save to persist",
+      "edited": "Edited",
+      "runs": "Runs",
+      "delete": "Delete",
+      "pause": "Pause",
+      "activate": "Activate",
+      "fixIssuesBeforeActivating": "Fix the issues below before activating",
+      "save": "Save",
+      "descriptionPlaceholder": "Add a short description (internal — customers don't see this)",
+      "descriptionAria": "Flow description"
+    },
     "logs": {
       "title": "Runs",
       "description": "The 50 most recent times this flow ran. Expand a row to see the engine's per-step log.",
@@ -1163,6 +1178,7 @@
       "deleteNode": "Delete node",
       "canvasView": "Canvas",
       "listView": "List",
+      "editorViewAria": "Editor view",
       "noNodeSelected": "No node selected",
       "noNodeDesc": "Select a node on the canvas to edit its configuration.",
       "form": {
@@ -1217,6 +1233,10 @@
         "removeFile": "Remove file",
         "uploading": "Uploading…",
         "clickToUpload": "Click to upload (max 16 MB)",
+        "fileTooLarge": "File is {size} MB — limit is 16 MB.",
+        "fileUploaded": "File uploaded.",
+        "uploadFailed": "Upload failed.",
+        "removeSectionAria": "Remove section",
         "captionLabel": "Caption (optional, shown under the media)",
         "filenameLabel": "Filename shown to the customer (documents only)",
         "filenamePlaceholder": "invoice.pdf",
@@ -1282,7 +1302,11 @@
       "fixIssues": "Fix the issues below before activating.",
       "statusActivated": "Flow activated.",
       "statusArchived": "Archived.",
-      "statusDraft": "Saved as draft."
+      "statusDraft": "Saved as draft.",
+      "saveFailed": "Save failed",
+      "statusUpdateFailed": "Status update failed",
+      "deleteFailed": "Delete failed",
+      "deleteConfirm": "Delete \"{name}\"? Any active runs end immediately. This can't be undone."
     },
     "summary": {
       "options": "{count} {count, plural, =1 {option} other {options}}",
@@ -1850,5 +1874,64 @@
       "deleteConfirm": "Delete this quick reply?",
       "deleteFailed": "Couldn't delete the quick reply."
     }
+  },
+  "Agents": {
+    "page": {
+      "title": "AI Agents",
+      "subtitle": "Your bring-your-own-key AI agent — set it up, then test it in the playground before it replies to customers in the inbox.",
+      "tabPlayground": "Playground",
+      "tabSetup": "Setup",
+      "tabUsage": "Usage"
+    },
+    "playground": {
+      "title": "Playground",
+      "subtitle": "— test replies as if you were a customer",
+      "reset": "Reset",
+      "emptyHint": "Send a message to see how your agent would reply.",
+      "emptyHintDetail": "It uses your knowledge base and behaves exactly like the auto-reply bot — including handoff.",
+      "goToSetup": "Not set up yet? Go to Setup",
+      "wouldHandoff": "Would hand off to a human here",
+      "thinking": "Thinking…",
+      "inputPlaceholder": "Type a customer message…",
+      "notConfigured": "No agent configured yet — finish Setup first.",
+      "replyFailed": "Couldn't get a reply.",
+      "networkError": "Couldn't reach the agent."
+    },
+    "usage": {
+      "title": "Token usage",
+      "description": "Tokens spent on your provider key by drafts and the auto-reply bot. Counts only — no message content is stored here.",
+      "lastNDays": "Last {count} days",
+      "loadFailed": "Failed to load usage",
+      "noUsage": "No AI usage in the last {count} days yet.",
+      "noUsageHint": "This fills in as the assistant drafts and auto-replies.",
+      "totalTokens": "Total tokens",
+      "llmCalls": "LLM calls",
+      "autoReply": "Auto-reply",
+      "drafts": "Drafts",
+      "tokensPerDay": "Tokens per day",
+      "byModel": "By model",
+      "modelStatsSummary": "{tokens} tok · {calls} {calls, plural, =1 {call} other {calls}}",
+      "truncatedNotice": "Showing a partial window — usage is high enough that only the most recent records are summarized here."
+    }
+  },
+  "InteractiveBuilder": {
+    "kindButtons": "Reply buttons",
+    "kindList": "List",
+    "bodyLabel": "Body",
+    "bodyPlaceholder": "What the customer reads above the options",
+    "headerLabel": "Header (optional)",
+    "footerLabel": "Footer (optional)",
+    "showReplyIds": "Show reply IDs (advanced)",
+    "preview": "Preview",
+    "buttonsLabel": "Buttons ({count}/{max})",
+    "buttonLabelPlaceholder": "Button label",
+    "addButton": "Add button",
+    "listButtonLabel": "List button label",
+    "rowsLabel": "Rows ({count}/{max})",
+    "sectionTitlePlaceholder": "Section title (optional)",
+    "rowTitlePlaceholder": "Row title",
+    "rowDescriptionPlaceholder": "Description (optional)",
+    "addRow": "Add row",
+    "addSection": "Add section"
   }
 }
