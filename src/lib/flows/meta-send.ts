@@ -1,12 +1,11 @@
-import type {
-  InteractiveButton,
-  InteractiveListSection,
-  MediaKind,
-} from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import { getChannelForAccount } from '@/lib/channels/factory'
-import type { OutboundMediaKind } from '@/lib/channels/types'
+import type {
+  OutboundButton as InteractiveButton,
+  OutboundListSection as InteractiveListSection,
+  OutboundMediaKind,
+} from '@/lib/channels/types'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
@@ -119,7 +118,7 @@ interface SendMediaEngineArgs {
   userId: string
   conversationId: string
   contactId: string
-  kind: MediaKind
+  kind: OutboundMediaKind
   /** Public URL Meta fetches at send time. */
   link: string
   caption?: string
@@ -159,7 +158,7 @@ export async function engineSendMedia(
   const provider = await getChannelForAccount(args.accountId, db)
   const result = await provider.sender.sendMedia({
     to: sanitized,
-    kind: args.kind as OutboundMediaKind,
+    kind: args.kind,
     link: args.link,
     caption: args.caption,
     filename: args.filename,
