@@ -1433,5 +1433,188 @@
         "closeConversationHint": "Define o status da conversa como \"fechada\". Não requer configuração."
       }
     }
+  },
+  "Broadcasts": {
+    "page": {
+      "title": "Transmissões",
+      "subtitle": "Envie mensagens em massa aos seus contatos usando modelos aprovados.",
+      "newBroadcast": "Nova transmissão",
+      "noBroadcastsYet": "Nenhuma transmissão ainda",
+      "createFirst": "Crie sua primeira transmissão para alcançar seus contatos em escala.",
+      "table": {
+        "name": "Nome",
+        "template": "Modelo",
+        "recipients": "Destinatários",
+        "delivery": "Entrega",
+        "read": "Lida",
+        "status": "Status",
+        "date": "Data"
+      },
+      "errorLoad": "Falha ao carregar transmissões",
+      "retry": "Tentar novamente",
+      "broadcastInProgressAria": "Transmissão em andamento"
+    },
+    "status": {
+      "draft": "Rascunho",
+      "scheduled": "Agendada",
+      "sending": "Enviando",
+      "sent": "Enviada",
+      "failed": "Falhou",
+      "pending": "Pendente",
+      "delivered": "Entregue",
+      "read": "Lida",
+      "replied": "Respondida",
+      "unknown": "Desconhecido"
+    },
+    "detail": {
+      "backToBroadcasts": "Voltar para Transmissões",
+      "notFound": "Transmissão não encontrada",
+      "template": "Modelo: {name}",
+      "createdAt": "Criada em {date}",
+      "deletePrompt": "Excluir esta transmissão?",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar",
+      "deleting": "Excluindo…",
+      "delete": "Excluir",
+      "cannotDeleteSending": "Não é possível excluir enquanto uma transmissão está sendo enviada",
+      "deleteHover": "Excluir esta transmissão",
+      "funnel": "Funil",
+      "recipientsHeader": "Destinatários ({filtered} de {total})",
+      "recipientsHeaderAll": "Destinatários ({total})",
+      "allStatuses": "Todos os status",
+      "exportCsv": "Exportar CSV",
+      "noRecipients": "Nenhum destinatário encontrado.",
+      "noRecipientsFilter": "Nenhum destinatário corresponde a este filtro.",
+      "table": {
+        "contact": "Contato",
+        "phone": "Telefone",
+        "status": "Status",
+        "sent": "Enviada",
+        "delivered": "Entregue",
+        "read": "Lida",
+        "error": "Erro"
+      },
+      "stats": {
+        "totalRecipients": "Total de destinatários",
+        "sent": "Enviadas",
+        "delivered": "Entregues",
+        "read": "Lidas",
+        "replied": "Respondidas",
+        "failed": "Falharam"
+      },
+      "toastFailedDelete": "Falha ao excluir: {error}",
+      "toastDeleted": "Transmissão excluída"
+    },
+    "new": {
+      "title": "Nova transmissão",
+      "subtitle": "Crie e envie uma mensagem de transmissão aos seus contatos.",
+      "steps": {
+        "template": "Modelo",
+        "audience": "Público",
+        "personalize": "Personalizar",
+        "send": "Enviar"
+      },
+      "toastGiveName": "Dê um nome à transmissão antes de salvar um rascunho.",
+      "toastNotSignedIn": "Não conectado.",
+      "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
+      "toastFailedDraft": "Falha ao salvar rascunho: {error}",
+      "toastDraftSaved": "Rascunho salvo"
+    },
+    "wizard": {
+      "next": "Próximo",
+      "back": "Voltar",
+      "cancel": "Cancelar",
+      "chooseTemplate": {
+        "title": "Escolha um modelo",
+        "subtitle": "Selecione um modelo de mensagem aprovado para sua transmissão.",
+        "noTemplates": "Nenhum modelo disponível.",
+        "createFirst": "Crie um modelo em Configurações primeiro.",
+        "errorLoad": "Falha ao carregar modelos"
+      },
+      "selectAudience": {
+        "title": "Selecionar público",
+        "subtitle": "Escolha quem receberá esta transmissão.",
+        "method": {
+          "all": "Todos os contatos",
+          "tags": "Filtrar por tags",
+          "customField": "Campo personalizado",
+          "csv": "Enviar CSV"
+        },
+        "allDesc": "Enviar para todos os {count} contatos da sua base.",
+        "allDescLoading": "Enviar para todos os contatos da sua base.",
+        "tagDesc": "Enviar para contatos que correspondem a tags específicas.",
+        "customFieldDesc": "Enviar para contatos que correspondem a uma regra de campo personalizado.",
+        "csvDesc": "Envie um CSV com números de telefone (e nomes opcionais).",
+        "selectTags": "Selecionar tags",
+        "searchTags": "Buscar tags...",
+        "noTagsFound": "Nenhuma tag encontrada.",
+        "excludeTags": "Excluir tags (opcional)",
+        "searchExcludeTags": "Buscar tags para excluir...",
+        "field": "Campo",
+        "selectField": "Selecione um campo...",
+        "operator": "Operador",
+        "operatorIs": "É",
+        "operatorIsNot": "Não é",
+        "operatorContains": "Contém",
+        "value": "Valor",
+        "valuePlaceholder": "Valor para corresponder",
+        "uploadCsv": "Enviar arquivo CSV",
+        "csvFormatDesc": "Deve conter uma coluna 'phone' (formato E.164). A coluna 'name' é opcional.",
+        "csvContactsFound": "{count} contato(s) válido(s) encontrado(s) no CSV.",
+        "errorLoadTags": "Falha ao carregar tags",
+        "errorLoadFields": "Falha ao carregar campos personalizados",
+        "errorCsvParse": "Não foi possível interpretar o arquivo CSV.",
+        "errorCsvMissingPhone": "O CSV deve ter uma coluna 'phone'."
+      },
+      "personalize": {
+        "title": "Personalizar variáveis",
+        "subtitle": "Associe as variáveis do modelo a campos de contato ou informe valores fixos.",
+        "headerImage": "Imagem do cabeçalho",
+        "headerImageDesc": "Este modelo requer uma imagem de cabeçalho.",
+        "imageUrl": "URL da imagem",
+        "imageUrlPlaceholder": "https://exemplo.com/imagem.jpg",
+        "variables": "Variáveis",
+        "varDesc": "Defina valores para {{name}}",
+        "type": "Tipo",
+        "typeStatic": "Valor fixo",
+        "typeContact": "Campo do contato",
+        "typeCustom": "Campo personalizado",
+        "staticValue": "Valor fixo",
+        "valuePlaceholder": "Digite um valor...",
+        "contactField": "Campo do contato",
+        "selectContactField": "Selecione um campo...",
+        "customField": "Campo personalizado",
+        "selectCustomField": "Selecione um campo personalizado...",
+        "preview": "Pré-visualização",
+        "previewSample": "Mostrando pré-visualização com dados de exemplo.",
+        "noPreview": "Pré-visualização não disponível.",
+        "fieldMap": {
+          "name": "Nome",
+          "phone": "Telefone",
+          "email": "E-mail"
+        }
+      },
+      "scheduleSend": {
+        "title": "Revisar e enviar",
+        "subtitle": "Dê um nome à sua transmissão e confirme o envio.",
+        "broadcastName": "Nome da transmissão",
+        "broadcastNamePlaceholder": "ex.: Promoção de Verão",
+        "summary": "Resumo",
+        "template": "Modelo:",
+        "audience": "Público:",
+        "audienceAll": "Todos os contatos",
+        "audienceTags": "Filtrado por tags",
+        "audienceField": "Filtrado por campo personalizado",
+        "audienceCsv": "Upload de CSV",
+        "variables": "Variáveis:",
+        "variablesMapped": "{count} mapeada(s)",
+        "saveDraft": "Salvar como rascunho",
+        "sendNow": "Enviar transmissão",
+        "sending": "Enviando...",
+        "preparing": "Preparando...",
+        "progressDesc": "Processando {current} de {total} destinatários...",
+        "toastFailedPreview": "Falha ao carregar dados de pré-visualização"
+      }
+    }
   }
 }

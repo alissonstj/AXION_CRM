@@ -703,7 +703,8 @@
         "date": "Date"
       },
       "errorLoad": "Failed to load broadcasts",
-      "retry": "Retry"
+      "retry": "Retry",
+      "broadcastInProgressAria": "Broadcast in progress"
     },
     "status": {
       "draft": "Draft",
@@ -831,6 +832,7 @@
         "typeContact": "Contact Field",
         "typeCustom": "Custom Field",
         "staticValue": "Static Value",
+        "valuePlaceholder": "Enter value...",
         "contactField": "Contact Field",
         "selectContactField": "Select field...",
         "customField": "Custom Field",
