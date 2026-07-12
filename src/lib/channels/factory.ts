@@ -19,6 +19,15 @@ export class ChannelNotImplementedError extends Error {
   }
 }
 
+/** Falha real do Supabase ao buscar a config — distinta de "sem config",
+ *  para não mascarar uma falha de infra como ChannelConfigError. */
+export class ChannelLookupError extends Error {
+  constructor(accountId: string, cause: unknown) {
+    super(`Failed to look up channel config for account ${accountId}: ${String(cause)}`);
+    this.name = 'ChannelLookupError';
+  }
+}
+
 /**
  * Resolve o provedor de canal ativo da conta. Costura única entre os
  * callers e a implementação de provedor — o formato de armazenamento
@@ -28,12 +37,13 @@ export async function getChannelForAccount(
   accountId: string,
   db: SupabaseClient,
 ): Promise<ChannelProvider> {
-  const { data: config } = await db
+  const { data: config, error } = await db
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', accountId)
     .maybeSingle();
 
+  if (error) throw new ChannelLookupError(accountId, error);
   if (!config) throw new ChannelConfigError(accountId);
 
   const provider = (config.provider as string) ?? 'meta';
