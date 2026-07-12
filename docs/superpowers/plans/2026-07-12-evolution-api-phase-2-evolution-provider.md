@@ -1986,6 +1986,13 @@ export async function DELETE(_request: Request) {
     const provider = new EvolutionProvider({
       baseUrl: process.env.EVOLUTION_API_URL!,
       apiKey: decrypt(config.evolution_instance_token as string),
+      // deleteEvolutionInstance (called inside disconnect()) is an admin
+      // action per the design doc's "Chaves de API" section — must use
+      // the global key, not the instance token, or the delete call gets
+      // rejected server-side and the instance is orphaned. Task 5's
+      // disconnect() falls back to `apiKey` when this is absent, so it
+      // must be passed explicitly here.
+      adminApiKey: process.env.EVOLUTION_API_KEY!,
       instanceName: config.evolution_instance_name as string,
     });
     try {
