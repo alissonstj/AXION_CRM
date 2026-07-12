@@ -52,14 +52,31 @@ describe('EvolutionProvider.sender', () => {
 
 describe('EvolutionProvider lifecycle', () => {
   it('connect() creates the instance (global key) then connects (instance token) and returns the QR', async () => {
-    vi.spyOn(evolutionApi, 'createEvolutionInstance').mockResolvedValue({
+    const createSpy = vi.spyOn(evolutionApi, 'createEvolutionInstance').mockResolvedValue({
       token: 'new-instance-token', qrCode: 'data:image/png;base64,AAA',
     });
     const provider = new EvolutionProvider({ ...config, isNewInstance: true });
     const state = await provider.connect();
     expect(state).toEqual({ status: 'connecting', qrCode: 'data:image/png;base64,AAA' });
-    expect(evolutionApi.createEvolutionInstance).toHaveBeenCalledWith(
+    expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({ instanceName: 'axion-acc1' }),
+    );
+  });
+
+  it('connect() uses adminApiKey for create-instance (admin action) when provided', async () => {
+    const createSpy = vi.spyOn(evolutionApi, 'createEvolutionInstance').mockResolvedValue({
+      token: 'new-instance-token', qrCode: 'data:image/png;base64,AAA',
+    });
+    const configWithAdmin = {
+      ...config,
+      apiKey: 'instance-token',
+      adminApiKey: 'global-admin-key',
+      isNewInstance: true
+    };
+    const provider = new EvolutionProvider(configWithAdmin);
+    await provider.connect();
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'global-admin-key', instanceName: 'axion-acc1' })
     );
   });
 
@@ -86,6 +103,35 @@ describe('EvolutionProvider lifecycle', () => {
     await provider.disconnect();
     expect(logoutSpy).toHaveBeenCalledWith(expect.objectContaining({ instanceName: 'axion-acc1' }));
     expect(deleteSpy).toHaveBeenCalledWith(expect.objectContaining({ instanceName: 'axion-acc1' }));
+  });
+
+  it('disconnect() uses adminApiKey for delete (admin action) while using instance apiKey for logout', async () => {
+    const logoutSpy = vi.spyOn(evolutionApi, 'logoutEvolutionInstance').mockResolvedValue(undefined);
+    const deleteSpy = vi.spyOn(evolutionApi, 'deleteEvolutionInstance').mockResolvedValue(undefined);
+    const configWithAdmin = {
+      ...config,
+      apiKey: 'instance-token',
+      adminApiKey: 'global-admin-key'
+    };
+    const provider = new EvolutionProvider(configWithAdmin);
+    await provider.disconnect();
+    expect(logoutSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'instance-token', instanceName: 'axion-acc1' })
+    );
+    expect(deleteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'global-admin-key', instanceName: 'axion-acc1' })
+    );
+  });
+
+  it('disconnect() falls back to apiKey when adminApiKey is absent', async () => {
+    const deleteSpy = vi.spyOn(evolutionApi, 'deleteEvolutionInstance').mockResolvedValue(undefined);
+    vi.spyOn(evolutionApi, 'logoutEvolutionInstance').mockResolvedValue(undefined);
+    const configNoAdmin = { ...config, apiKey: 'fallback-key' };
+    const provider = new EvolutionProvider(configNoAdmin);
+    await provider.disconnect();
+    expect(deleteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'fallback-key', instanceName: 'axion-acc1' })
+    );
   });
 });
 

@@ -22,12 +22,14 @@ import type {
 
 export interface EvolutionProviderConfig {
   baseUrl: string;
-  /** Instance-scoped token for send/connect/logout calls. */
+  /** Instance-scoped token for send/connect/logout calls. Fallback for admin
+   *  actions (create, delete) when adminApiKey is absent. */
   apiKey: string;
   instanceName: string;
-  /** Global EVOLUTION_API_KEY — only used by connect() when creating a
-   *  brand-new instance (admin action). Optional because most methods
-   *  never need it (see design doc "Chaves de API"). */
+  /** Global EVOLUTION_API_KEY — used by connect() when creating a
+   *  brand-new instance (admin action) and by disconnect() when deleting
+   *  the instance. Optional because most methods never need it (see design
+   *  doc "Chaves de API"). */
   adminApiKey?: string;
   /** True when this account has never connected before (no
    *  evolution_instance_token saved yet) — connect() must create the
@@ -127,9 +129,9 @@ export class EvolutionProvider implements ChannelProvider {
   }
 
   async disconnect(): Promise<void> {
-    const { baseUrl, apiKey, instanceName } = this.config;
+    const { baseUrl, apiKey, instanceName, adminApiKey } = this.config;
     await logoutEvolutionInstance({ baseUrl, apiKey, instanceName });
-    await deleteEvolutionInstance({ baseUrl, apiKey, instanceName });
+    await deleteEvolutionInstance({ baseUrl, apiKey: adminApiKey ?? apiKey, instanceName });
   }
 }
 
