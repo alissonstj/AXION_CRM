@@ -1,4 +1,4 @@
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import {
   engineSendInteractiveButtons,
@@ -11,6 +11,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
+import { getChannelForAccount } from '@/lib/channels/factory'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
@@ -131,19 +132,36 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
-  }
+  let waMessageId: string
+  let workingPhone = sanitized
 
-  const accessToken = decrypt(config.access_token)
+  if (input.kind === 'template') {
+    // Templates are Meta-only — outside the ChannelSender interface,
+    // so this keeps calling meta-api directly (with its own local
+    // phone-variant retry, same as before). Guard against a non-Meta
+    // provider up front: once Evolution accounts exist, an automation
+    // authored against a template step must fail loudly here instead
+    // of silently calling the Meta API against an Evolution-configured
+    // account. The thrown error is caught by the engine's step loop
+    // and recorded into automation_logs, same as any other step failure.
+    const provider = await getChannelForAccount(input.accountId, db)
+    if (provider.id !== 'meta') {
+      throw new Error(
+        `Template sends require the Meta provider (account is configured for "${provider.id}")`
+      )
+    }
 
-  const attempt = async (phone: string): Promise<string> => {
-    if (input.kind === 'template') {
+    const { data: config, error: configErr } = await db
+      .from('whatsapp_config')
+      .select('*')
+      .eq('account_id', input.accountId)
+      .single()
+    if (configErr || !config) {
+      throw new Error('WhatsApp not configured for this account')
+    }
+    const accessToken = decrypt(config.access_token)
+
+    const attemptTemplate = async (phone: string): Promise<string> => {
       const r = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,
         accessToken,
@@ -154,35 +172,35 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       })
       return r.messageId
     }
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: input.text,
-    })
-    return r.messageId
-  }
 
-  // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
-  // numbers registered with/without a trunk 0 both require this to
-  // reliably land a message.
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
+    // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
+    // numbers registered with/without a trunk 0 both require this to
+    // reliably land a message.
+    const variants = phoneVariants(sanitized)
+    let sentId = ''
+    let lastError: unknown = null
+    for (const v of variants) {
+      try {
+        sentId = await attemptTemplate(v)
+        workingPhone = v
+        lastError = null
+        break
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!isRecipientNotAllowedError(msg)) throw err
+        lastError = err
+      }
     }
+    if (lastError) throw lastError
+    waMessageId = sentId
+  } else {
+    // Text routes through the account's channel provider, which owns
+    // the phone-variant retry internally (see MetaProvider.sender).
+    const provider = await getChannelForAccount(input.accountId, db)
+    const result = await provider.sender.sendText({ to: sanitized, text: input.text })
+    waMessageId = result.providerMessageId
+    workingPhone = result.workingRecipient ?? sanitized
   }
-  if (lastError) throw lastError
 
   if (workingPhone !== sanitized) {
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
