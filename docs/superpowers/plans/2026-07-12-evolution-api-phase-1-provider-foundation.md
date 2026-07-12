@@ -894,9 +894,12 @@ vi.mock('@/lib/contacts/dedupe', () => ({
 
 import { ingestInbound } from './ingest';
 
-// fakeDb: grava inserts numa lista e devolve linhas com id. Detalhe de
-// implementação do stub segue o estilo dos testes de webhook existentes.
-// (Ver src/app/api/whatsapp/webhook para o shape esperado.)
+// fakeDb: grava inserts numa lista e devolve linhas com id. Seguir o
+// padrão real do repo — stub Supabase encadeável, scriptado por tabela —
+// como em src/lib/whatsapp/resolve-conversation.test.ts (função
+// `makeDb(script)` naquele arquivo). Não existe teste em
+// src/app/api/whatsapp/webhook/ hoje (só route.ts) — não procurar um
+// stub reexportável de lá.
 
 describe('ingestInbound', () => {
   it('creates contact + conversation + message for a text inbound', async () => {
@@ -913,7 +916,7 @@ describe('ingestInbound', () => {
 });
 ```
 
-Nota para o implementador: `makeFakeDb` deve espelhar o stub de supabase já usado nos testes de webhook do repo (`.from().select().eq()...`, `.insert().select().single()`). Reusar aquele helper em vez de inventar um novo — se ele não estiver exportado, extraí-lo para um util de teste compartilhado como parte deste passo.
+Nota para o implementador: `makeFakeDb` é um helper local deste arquivo de teste (o repo não tem um util de teste compartilhado — cada arquivo escreve o seu). Copiar a forma de `makeDb(script)` em `src/lib/whatsapp/resolve-conversation.test.ts`: builder encadeável (`select/insert/update/eq/order/limit` retornam o próprio builder) que resolve nos métodos terminais (`maybeSingle`/`single`/`limit`) conforme um `script` por tabela passado no teste.
 
 - [ ] **Step 2: Rodar e confirmar que falha**
 
@@ -957,7 +960,7 @@ Nota: como o `route.ts` já resolve UMA config por `phone_number_id`, e o `parse
 - [ ] **Step 5: Rodar TODA a suíte e confirmar verde**
 
 Run: `npm test`
-Expected: os testes de webhook existentes continuam PASS + o novo `ingest.test.ts` PASS. As 5 falhas pré-existentes de currency/date permanecem (não relacionadas).
+Expected: o novo `ingest.test.ts` PASS + toda a suíte (não há testes dedicados a `src/app/api/whatsapp/webhook/route.ts` hoje — nada a preservar nesse arquivo além do typecheck e do teste manual do Step 6). As 5 falhas pré-existentes de currency/date permanecem (não relacionadas).
 
 Run: `npm run typecheck`
 Expected: PASS.
