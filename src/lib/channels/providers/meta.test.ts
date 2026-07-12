@@ -67,3 +67,51 @@ describe('MetaProvider.sender', () => {
     }));
   });
 });
+
+describe('MetaProvider.parseWebhook', () => {
+  const provider = new MetaProvider(cfg);
+
+  it('maps a text message', () => {
+    const payload = {
+      entry: [{ id: 'e', changes: [{ field: 'messages', value: {
+        metadata: { phone_number_id: 'PNID', display_phone_number: '1' },
+        contacts: [{ profile: { name: 'Ana' }, wa_id: '15551234567' }],
+        messages: [{ id: 'wamid.a', from: '15551234567', timestamp: '1700000000', type: 'text', text: { body: 'oi' } }],
+      } }] }],
+    };
+    const out = provider.parseWebhook(payload);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.a',
+      kind: 'text', text: 'oi',
+    });
+    expect(out[0].timestamp).toBeInstanceOf(Date);
+  });
+
+  it('maps an interactive button reply to interactive_reply with the id', () => {
+    const payload = { entry: [{ id: 'e', changes: [{ field: 'messages', value: {
+      contacts: [{ profile: { name: 'Bo' }, wa_id: '15550000000' }],
+      messages: [{ id: 'wamid.b', from: '15550000000', timestamp: '1700000001', type: 'interactive',
+        interactive: { type: 'button_reply', button_reply: { id: 'yes', title: 'Sim' } } }],
+    } }] }] };
+    const out = provider.parseWebhook(payload);
+    expect(out[0]).toMatchObject({ kind: 'interactive_reply', interactiveReplyId: 'yes', text: 'Sim' });
+  });
+
+  it('maps a reaction with its target', () => {
+    const payload = { entry: [{ id: 'e', changes: [{ field: 'messages', value: {
+      contacts: [{ profile: { name: 'C' }, wa_id: '15550000001' }],
+      messages: [{ id: 'wamid.c', from: '15550000001', timestamp: '1700000002', type: 'reaction',
+        reaction: { message_id: 'wamid.target', emoji: '👍' } }],
+    } }] }] };
+    const out = provider.parseWebhook(payload);
+    expect(out[0]).toMatchObject({ kind: 'reaction', reaction: { targetProviderMessageId: 'wamid.target', emoji: '👍' } });
+  });
+
+  it('ignores status-only and template change payloads (returns [])', () => {
+    const statusPayload = { entry: [{ id: 'e', changes: [{ field: 'messages', value: {
+      statuses: [{ id: 'wamid.s', status: 'delivered', timestamp: '1700000003', recipient_id: '1' }],
+    } }] }] };
+    expect(provider.parseWebhook(statusPayload)).toEqual([]);
+  });
+});
