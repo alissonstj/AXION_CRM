@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { MetaProvider } from './providers/meta';
+import { EvolutionProvider } from './providers/evolution';
 import type { ChannelProvider } from './types';
 
 /** Config de canal ausente para a conta. */
@@ -52,6 +53,14 @@ export async function getChannelForAccount(
       phoneNumberId: config.phone_number_id,
       accessToken: decrypt(config.access_token),
       wabaId: config.waba_id ?? null,
+    });
+  }
+  if (provider === 'evolution') {
+    if (!config.evolution_instance_token) throw new ChannelConfigError(accountId);
+    return new EvolutionProvider({
+      baseUrl: process.env.EVOLUTION_API_URL!,
+      apiKey: decrypt(config.evolution_instance_token),
+      instanceName: config.evolution_instance_name,
     });
   }
   throw new ChannelNotImplementedError(provider);
