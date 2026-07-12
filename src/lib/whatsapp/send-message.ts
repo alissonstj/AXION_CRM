@@ -21,14 +21,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  sendInteractiveButtons,
-  sendInteractiveList,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api';
+import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
@@ -44,6 +37,8 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { getChannelForAccount } from '@/lib/channels/factory';
+import type { OutboundMediaKind } from '@/lib/channels/types';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -329,100 +324,98 @@ export async function sendMessageToConversation(
     templateRow = data ?? null;
   }
 
-  const attempt = async (phone: string): Promise<string> => {
-    if (messageType === 'template') {
-      const result = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        templateName: templateName!,
-        language: templateLanguage || 'en_US',
-        template: templateRow ?? undefined,
-        messageParams: templateMessageParams ?? undefined,
-        params: templateParams || [],
-        contextMessageId,
-      });
-      return result.messageId;
-    }
-    if (isMediaKind) {
-      const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        kind: messageType as MediaKind,
-        link: mediaUrl!,
-        caption: contentText || undefined,
-        filename: filename || undefined,
-        contextMessageId,
-      });
-      return result.messageId;
-    }
-    if (messageType === 'interactive') {
-      const p = interactivePayload!;
-      if (p.kind === 'buttons') {
-        const result = await sendInteractiveButtons({
-          phoneNumberId: config.phone_number_id,
-          accessToken,
-          to: phone,
-          bodyText: p.body,
-          headerText: p.header || undefined,
-          footerText: p.footer || undefined,
-          buttons: p.buttons,
-          contextMessageId,
-        });
-        return result.messageId;
-      }
-      const result = await sendInteractiveList({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        bodyText: p.body,
-        buttonLabel: p.button_label,
-        headerText: p.header || undefined,
-        footerText: p.footer || undefined,
-        sections: p.sections,
-        contextMessageId,
-      });
-      return result.messageId;
-    }
-    const result = await sendTextMessage({
+  // Template attempt, retried locally across phone-number variants when
+  // Meta rejects with "recipient not in allowed list" — templates are
+  // Meta-only, outside the ChannelSender interface, so this loop stays
+  // here rather than moving into the provider.
+  const attemptTemplate = async (phone: string): Promise<string> => {
+    const result = await sendTemplateMessage({
       phoneNumberId: config.phone_number_id,
       accessToken,
       to: phone,
-      text: contentText!,
+      templateName: templateName!,
+      language: templateLanguage || 'en_US',
+      template: templateRow ?? undefined,
+      messageParams: templateMessageParams ?? undefined,
+      params: templateParams || [],
       contextMessageId,
     });
     return result.messageId;
   };
 
-  // Send via Meta — retry across phone-number variants if Meta rejects
-  // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
+  // Send — templates go straight to Meta with the local variant retry
+  // above; every other type routes through the account's channel
+  // provider, which already does its own variant retry internally and
+  // reports back the recipient variant that actually worked.
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
-    const variants = phoneVariants(sanitizedPhone);
-    let lastError: unknown = null;
+    if (messageType === 'template') {
+      const variants = phoneVariants(sanitizedPhone);
+      let lastError: unknown = null;
 
-    for (const variant of variants) {
-      try {
-        waMessageId = await attempt(variant);
-        workingPhone = variant;
-        lastError = null;
-        break;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!isRecipientNotAllowedError(message)) {
-          throw err;
+      for (const variant of variants) {
+        try {
+          waMessageId = await attemptTemplate(variant);
+          workingPhone = variant;
+          lastError = null;
+          break;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!isRecipientNotAllowedError(message)) {
+            throw err;
+          }
+          lastError = err;
+          console.warn(
+            `[send-message] variant "${variant}" rejected by Meta, trying next…`
+          );
         }
-        lastError = err;
-        console.warn(
-          `[send-message] variant "${variant}" rejected by Meta, trying next…`
-        );
       }
-    }
 
-    if (lastError) throw lastError;
+      if (lastError) throw lastError;
+    } else {
+      const provider = await getChannelForAccount(accountId, db);
+      let result;
+      if (isMediaKind) {
+        result = await provider.sender.sendMedia({
+          to: sanitizedPhone,
+          kind: messageType as OutboundMediaKind,
+          link: mediaUrl!,
+          caption: contentText || undefined,
+          filename: filename || undefined,
+          contextProviderMessageId: contextMessageId,
+        });
+      } else if (messageType === 'interactive') {
+        const p = interactivePayload!;
+        result =
+          p.kind === 'buttons'
+            ? await provider.sender.sendInteractiveButtons({
+                to: sanitizedPhone,
+                bodyText: p.body,
+                headerText: p.header || undefined,
+                footerText: p.footer || undefined,
+                buttons: p.buttons,
+                contextProviderMessageId: contextMessageId,
+              })
+            : await provider.sender.sendInteractiveList({
+                to: sanitizedPhone,
+                bodyText: p.body,
+                buttonLabel: p.button_label,
+                headerText: p.header || undefined,
+                footerText: p.footer || undefined,
+                sections: p.sections,
+                contextProviderMessageId: contextMessageId,
+              });
+      } else {
+        result = await provider.sender.sendText({
+          to: sanitizedPhone,
+          text: contentText!,
+          contextProviderMessageId: contextMessageId,
+        });
+      }
+      waMessageId = result.providerMessageId;
+      if (result.workingRecipient) workingPhone = result.workingRecipient;
+    }
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
