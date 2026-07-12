@@ -50,12 +50,42 @@ describe('EvolutionProvider.sender', () => {
   });
 });
 
-describe('EvolutionProvider stubs', () => {
-  it('connect/getConnectionState/disconnect throw not-implemented', async () => {
+describe('EvolutionProvider lifecycle', () => {
+  it('connect() creates the instance (global key) then connects (instance token) and returns the QR', async () => {
+    vi.spyOn(evolutionApi, 'createEvolutionInstance').mockResolvedValue({
+      token: 'new-instance-token', qrCode: 'data:image/png;base64,AAA',
+    });
+    const provider = new EvolutionProvider({ ...config, isNewInstance: true });
+    const state = await provider.connect();
+    expect(state).toEqual({ status: 'connecting', qrCode: 'data:image/png;base64,AAA' });
+    expect(evolutionApi.createEvolutionInstance).toHaveBeenCalledWith(
+      expect.objectContaining({ instanceName: 'axion-acc1' }),
+    );
+  });
+
+  it('connect() on an existing instance calls connectEvolutionInstance, not createEvolutionInstance', async () => {
+    vi.spyOn(evolutionApi, 'connectEvolutionInstance').mockResolvedValue({ qrCode: 'data:image/png;base64,BBB' });
+    const createSpy = vi.spyOn(evolutionApi, 'createEvolutionInstance');
+    const provider = new EvolutionProvider({ ...config, isNewInstance: false });
+    const state = await provider.connect();
+    expect(state).toEqual({ status: 'connecting', qrCode: 'data:image/png;base64,BBB' });
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('getConnectionState() returns disconnected without calling Evolution (no cache passed)', async () => {
     const provider = new EvolutionProvider(config);
-    await expect(provider.connect()).rejects.toThrow(/Task 5/);
-    await expect(provider.getConnectionState()).rejects.toThrow(/Task 5/);
-    await expect(provider.disconnect()).rejects.toThrow(/Task 5/);
+    const state = await provider.getConnectionState();
+    expect(state).toEqual({ status: 'disconnected' });
+    expect(evolutionApi.connectEvolutionInstance).not.toHaveBeenCalled();
+  });
+
+  it('disconnect() calls logout then delete', async () => {
+    const logoutSpy = vi.spyOn(evolutionApi, 'logoutEvolutionInstance').mockResolvedValue(undefined);
+    const deleteSpy = vi.spyOn(evolutionApi, 'deleteEvolutionInstance').mockResolvedValue(undefined);
+    const provider = new EvolutionProvider(config);
+    await provider.disconnect();
+    expect(logoutSpy).toHaveBeenCalledWith(expect.objectContaining({ instanceName: 'axion-acc1' }));
+    expect(deleteSpy).toHaveBeenCalledWith(expect.objectContaining({ instanceName: 'axion-acc1' }));
   });
 });
 

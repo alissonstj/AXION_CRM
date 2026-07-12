@@ -1,6 +1,10 @@
 import {
   sendEvolutionText,
   sendEvolutionMedia,
+  createEvolutionInstance,
+  connectEvolutionInstance,
+  logoutEvolutionInstance,
+  deleteEvolutionInstance,
   type EvolutionMediaType,
 } from '@/lib/whatsapp/evolution-api';
 import type {
@@ -18,10 +22,21 @@ import type {
 
 export interface EvolutionProviderConfig {
   baseUrl: string;
-  /** Instance-scoped token (not the global EVOLUTION_API_KEY) — see the
-   *  design doc's "Chaves de API" section for why. */
+  /** Instance-scoped token for send/connect/logout calls. */
   apiKey: string;
   instanceName: string;
+  /** Global EVOLUTION_API_KEY — only used by connect() when creating a
+   *  brand-new instance (admin action). Optional because most methods
+   *  never need it (see design doc "Chaves de API"). */
+  adminApiKey?: string;
+  /** True when this account has never connected before (no
+   *  evolution_instance_token saved yet) — connect() must create the
+   *  instance first. False means the instance already exists and
+   *  connect() should just re-fetch a QR. */
+  isNewInstance?: boolean;
+  /** Where the Evolution server should POST webhook events — passed
+   *  straight through to createEvolutionInstance. */
+  webhookUrl?: string;
 }
 
 const MEDIA_KIND_TO_EVOLUTION: Record<SendMediaArgs['kind'], EvolutionMediaType> = {
@@ -90,13 +105,31 @@ export class EvolutionProvider implements ChannelProvider {
     return inbound ? [inbound] : [];
   }
   async connect(): Promise<ConnectionState> {
-    throw new Error('not implemented — Task 5');
+    const { baseUrl, apiKey, instanceName, adminApiKey, isNewInstance, webhookUrl } = this.config;
+    if (isNewInstance) {
+      const result = await createEvolutionInstance({
+        baseUrl, apiKey: adminApiKey ?? apiKey, instanceName, webhookUrl: webhookUrl ?? '',
+      });
+      return { status: 'connecting', qrCode: result.qrCode };
+    }
+    const result = await connectEvolutionInstance({ baseUrl, apiKey, instanceName });
+    return { status: 'connecting', qrCode: result.qrCode };
   }
+
+  // Deliberately does not call Evolution — the webhook-fed cache (Task 7)
+  // is the source of truth for connection state, per the approved design
+  // ("cache alimentado pelo webhook"). Any caller wanting the *cached*
+  // state should read whatsapp_config directly (Task 8's routes do this);
+  // this method exists only to satisfy the ChannelProvider interface and
+  // returns a conservative default.
   async getConnectionState(): Promise<ConnectionState> {
-    throw new Error('not implemented — Task 5');
+    return { status: 'disconnected' };
   }
+
   async disconnect(): Promise<void> {
-    throw new Error('not implemented — Task 5');
+    const { baseUrl, apiKey, instanceName } = this.config;
+    await logoutEvolutionInstance({ baseUrl, apiKey, instanceName });
+    await deleteEvolutionInstance({ baseUrl, apiKey, instanceName });
   }
 }
 
