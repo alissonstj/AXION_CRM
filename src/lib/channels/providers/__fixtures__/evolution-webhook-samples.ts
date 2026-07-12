@@ -1,5 +1,17 @@
-// Real payloads captured from a live Evolution API v2 instance (see
-// docs/superpowers/specs/2026-07-12-evolution-api-phase-2-design.md).
+// Payloads for exercising EvolutionProvider.parseWebhook. Not all of
+// equal confidence — see docs/superpowers/specs/2026-07-12-evolution-api-phase-2-design.md
+// "Riscos remanescentes" and the Task 4 brief for the full breakdown:
+//
+//   Live-captured (real structure, from a real connected WhatsApp
+//   account during design): TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE,
+//   IMAGE_INBOUND_SAMPLE, AUDIO_INBOUND_SAMPLE, VIDEO_GROUP_SAMPLE,
+//   CONNECTION_UPDATE_ERROR_SAMPLE.
+//
+//   Documented from the upstream Baileys/Evolution source, NOT
+//   live-captured — lower confidence, same tier as the sendMedia DTO
+//   correction in Task 2: DOCUMENT_INBOUND_SAMPLE, LOCATION_INBOUND_SAMPLE,
+//   REACTION_INBOUND_SAMPLE, BUTTON_REPLY_INBOUND_SAMPLE.
+//
 // Phone numbers/names anonymized; base64 truncated to a short valid
 // placeholder (the real captured lengths were in the hundreds of KB —
 // not needed to exercise the mapping logic). E2E crypto fields
