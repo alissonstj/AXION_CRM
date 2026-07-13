@@ -16,10 +16,10 @@ opinions become yours.
 ## Fork and run
 
 ```bash
-# 1. Fork on GitHub: https://github.com/ArnasDon/wacrm → Fork
+# 1. Fork on GitHub: https://github.com/alissonstj/AXION_CRM → Fork
 # 2. Clone your fork
-git clone https://github.com/<your-username>/wacrm.git
-cd wacrm
+git clone https://github.com/<your-username>/AXION_CRM.git
+cd AXION_CRM
 
 cp .env.local.example .env.local   # fill in Supabase + Meta creds
 npm install
