@@ -6,8 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // = vi.fn()` read directly inside the factory below hits the TDZ.
 // `vi.hoisted()` runs its initializer as part of that same hoisting
 // phase, so the value exists by the time the factory needs it.
-const { mockIngestInbound } = vi.hoisted(() => ({
+const { mockIngestInbound, mockDecrypt } = vi.hoisted(() => ({
   mockIngestInbound: vi.fn().mockResolvedValue(undefined),
+  mockDecrypt: vi.fn((v: string) => v.replace('enc:', '')),
 }));
 vi.mock('@/lib/channels/ingest', () => ({ ingestInbound: mockIngestInbound }));
 vi.mock('@/lib/channels/evolution-media', () => ({
@@ -29,6 +30,8 @@ let mockConfigRow: Record<string, unknown> | null;
 
 beforeEach(() => {
   mockIngestInbound.mockClear();
+  mockDecrypt.mockClear();
+  mockDecrypt.mockImplementation((v: string) => v.replace('enc:', ''));
   mockConfigRow = {
     account_id: 'acc-1', user_id: 'user-1',
     evolution_instance_name: 'axion-acc1', evolution_instance_token: 'enc:tok',
@@ -37,7 +40,7 @@ beforeEach(() => {
 
 // decrypt('enc:tok') must resolve to a plain token for the apikey check —
 // mock it deterministically rather than pulling in real AES.
-vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: (v: string) => v.replace('enc:', '') }));
+vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: mockDecrypt }));
 
 import { POST } from './route';
 import { TEXT_INBOUND_SAMPLE } from '@/lib/channels/providers/__fixtures__/evolution-webhook-samples';
@@ -66,6 +69,15 @@ describe('POST /api/channels/evolution/webhook', () => {
 
   it('returns 200 without ingesting when no config matches the instance name', async () => {
     mockConfigRow = null;
+    const res = await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
+    expect(res.status).toBe(200);
+    expect(mockIngestInbound).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 even when decrypt throws during processing', async () => {
+    mockDecrypt.mockImplementationOnce(() => {
+      throw new Error('Simulated GCM auth-tag failure');
+    });
     const res = await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
     expect(res.status).toBe(200);
     expect(mockIngestInbound).not.toHaveBeenCalled();
