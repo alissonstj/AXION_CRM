@@ -12,13 +12,22 @@
 interface EvolutionErrorResponse {
   message?: string;
   error?: string;
+  // Validation-style rejections (e.g. duplicate instance name) nest the
+  // actual reason here instead of the top-level fields — confirmed
+  // against a live instance: 403 duplicate-name gives
+  // {"error":"Forbidden","response":{"message":["...already in use."]}}.
+  // Checked first since it's the most specific reason when present.
+  response?: { message?: string | string[] };
 }
 
 async function throwEvolutionError(response: Response, fallback: string): Promise<never> {
   let message = fallback;
   try {
     const data = (await response.json()) as EvolutionErrorResponse;
-    if (data.message) message = data.message;
+    const nested = data.response?.message;
+    if (Array.isArray(nested) && nested.length > 0) message = nested.join('; ');
+    else if (typeof nested === 'string' && nested) message = nested;
+    else if (data.message) message = data.message;
     else if (data.error) message = data.error;
   } catch {
     // response body wasn't JSON — keep the fallback

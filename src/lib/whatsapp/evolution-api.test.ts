@@ -58,6 +58,25 @@ describe('createEvolutionInstance', () => {
       createEvolutionInstance({ ...BASE, instanceName: 'x', webhookUrl: 'https://x' }),
     ).rejects.toThrow('Instance already exists');
   });
+
+  it('throws with the nested response.message on a duplicate-instance-name rejection', async () => {
+    // Real shape from a live instance: 403 with a generic top-level
+    // "error": "Forbidden" and the actual reason nested one level down.
+    // Before this fix, throwEvolutionError only read the top-level
+    // fields and surfaced the opaque "Forbidden" instead.
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        status: 403,
+        error: 'Forbidden',
+        response: { message: ['This name "axion-acc1" is already in use.'] },
+      }),
+    } as Response);
+    await expect(
+      createEvolutionInstance({ ...BASE, instanceName: 'axion-acc1', webhookUrl: 'https://x' }),
+    ).rejects.toThrow('This name "axion-acc1" is already in use.');
+  });
 });
 
 describe('connectEvolutionInstance', () => {
