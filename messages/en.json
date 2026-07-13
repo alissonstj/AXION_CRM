@@ -749,6 +749,8 @@
         "preview": "Preview",
         "previewSample": "Showing preview with sample data.",
         "noPreview": "Preview not available.",
+        "noVariablesFreeform": "No variables to map — this message has no {{...}} placeholders.",
+        "previewFreeform": "Preview",
         "fieldMap": {
           "name": "Name",
           "phone": "Phone",

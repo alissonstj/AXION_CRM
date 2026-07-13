@@ -244,9 +244,9 @@ export default function NewBroadcastPage() {
               onBack={() => setCurrentStep(0)}
             />
           )}
-          {currentStep === 2 && template && (
+          {currentStep === 2 && content && (
             <Step3Personalize
-              template={template}
+              content={content}
               variables={variables}
               onUpdate={setVariables}
               headerMediaUrl={headerMediaUrl}

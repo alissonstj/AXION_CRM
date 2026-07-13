@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Contact, CustomField, MessageTemplate } from '@/types';
+import type { BroadcastComposeContent } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -23,10 +24,12 @@ interface VariableMapping {
 }
 
 interface Step3Props {
-  template: MessageTemplate;
+  content: BroadcastComposeContent;
   variables: Record<string, VariableMapping>;
   onUpdate: (variables: Record<string, VariableMapping>) => void;
-  /** Media URL for an IMAGE/VIDEO/DOCUMENT header, when the template has one. */
+  /** Media URL for a Meta template's IMAGE/VIDEO/DOCUMENT header. Not
+   *  read/shown for freeform content — Step 1 already captured any
+   *  freeform media. */
   headerMediaUrl: string;
   onHeaderMediaUrlChange: (url: string) => void;
   onNext: () => void;
@@ -67,8 +70,16 @@ const SAMPLE_CONTACT: Contact = {
   updated_at: new Date().toISOString(),
 };
 
+const KNOWN_CONTACT_FIELDS = new Set(['name', 'phone', 'email', 'company']);
+
+function defaultMappingFor(key: string): { type: 'static' | 'field' | 'custom_field'; value: string } {
+  if (KNOWN_CONTACT_FIELDS.has(key)) return { type: 'field', value: key };
+  if (key.startsWith('custom:')) return { type: 'custom_field', value: key.slice('custom:'.length) };
+  return { type: 'static', value: '' };
+}
+
 export function Step3Personalize({
-  template,
+  content,
   variables,
   onUpdate,
   headerMediaUrl,
@@ -128,30 +139,34 @@ export function Step3Personalize({
     };
   }, []);
 
+  const bodyText = content.kind === 'template' ? content.template.body_text : content.text;
+
   const placeholders = useMemo(() => {
-    const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
+    const pattern = content.kind === 'template' ? /\{\{(\d+)\}\}/g : /\{\{([a-zA-Z_][\w:]*)\}\}/g;
+    const matches = bodyText.match(pattern);
     if (!matches) return [];
     return [...new Set(matches)].sort();
-  }, [template.body_text]);
+  }, [bodyText, content.kind]);
 
   // Templates with an IMAGE/VIDEO/DOCUMENT header need a media URL at
   // send time — Meta requires the media component on every delivery and
   // rejects the broadcast without it. The field is hidden for text-only
   // headers.
-  const mediaHeaderType = isMediaHeaderType(template.header_type)
-    ? template.header_type
-    : null;
+  const mediaHeaderType =
+    content.kind === 'template' && isMediaHeaderType(content.template.header_type)
+      ? content.template.header_type
+      : null;
 
   // Seed the field with the template's stored sample URL the first time
   // we land on a media-header template, so the common "reuse the
   // approved media" case needs no typing. Only seeds when empty to avoid
   // clobbering a URL the user already edited.
   useEffect(() => {
-    if (mediaHeaderType && !headerMediaUrl && template.header_media_url) {
-      onHeaderMediaUrlChange(template.header_media_url);
+    if (content.kind === 'template' && mediaHeaderType && !headerMediaUrl && content.template.header_media_url) {
+      onHeaderMediaUrlChange(content.template.header_media_url);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaHeaderType, template.header_media_url]);
+  }, [content, mediaHeaderType]);
 
   const headerMediaError = useMemo<'missing' | 'invalid' | null>(() => {
     if (!mediaHeaderType) return null;
@@ -171,8 +186,8 @@ export function Step3Personalize({
     const missing: string[] = [];
     for (const placeholder of placeholders) {
       const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-      const mapping = variables[key];
-      if (!mapping || !mapping.value?.trim()) {
+      const mapping = variables[key] ?? defaultMappingFor(key);
+      if (!mapping.value?.trim()) {
         missing.push(placeholder);
       }
     }
@@ -197,32 +212,30 @@ export function Step3Personalize({
       ? firstContactCustomValues
       : new Map<string, string>();
 
-    let text = template.body_text;
+    let text = bodyText;
     for (const placeholder of placeholders) {
       const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-      const mapping = variables[key];
+      const mapping = variables[key] ?? defaultMappingFor(key);
       let replacement = placeholder;
 
-      if (mapping) {
-        if (mapping.type === 'static' && mapping.value) {
-          replacement = mapping.value;
-        } else if (mapping.type === 'field' && mapping.value) {
-          const fieldMap: Record<string, string | undefined> = {
-            name: contact.name,
-            phone: contact.phone,
-            email: contact.email,
-            company: contact.company,
-          };
-          replacement = fieldMap[mapping.value] ?? placeholder;
-        } else if (mapping.type === 'custom_field' && mapping.value) {
-          replacement = customValues.get(mapping.value) || placeholder;
-        }
+      if (mapping.type === 'static' && mapping.value) {
+        replacement = mapping.value;
+      } else if (mapping.type === 'field' && mapping.value) {
+        const fieldMap: Record<string, string | undefined> = {
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          company: contact.company,
+        };
+        replacement = fieldMap[mapping.value] ?? placeholder;
+      } else if (mapping.type === 'custom_field' && mapping.value) {
+        replacement = customValues.get(mapping.value) || placeholder;
       }
       text = text.replaceAll(placeholder, replacement);
     }
     return text;
   }, [
-    template.body_text,
+    bodyText,
     variables,
     placeholders,
     firstContact,
@@ -287,14 +300,14 @@ export function Step3Personalize({
       {placeholders.length === 0 && !mediaHeaderType ? (
         <div className="rounded-xl border border-border bg-card/50 p-6 text-center">
           <p className="text-sm text-muted-foreground">
-            {t('personalize.noPreview')}
+            {content.kind === 'freeform' ? t('personalize.noVariablesFreeform') : t('personalize.noPreview')}
           </p>
         </div>
       ) : placeholders.length === 0 ? null : (
         <div className="space-y-4">
           {placeholders.map((placeholder) => {
             const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-            const mapping = variables[key] ?? { type: 'static', value: '' };
+            const mapping = variables[key] ?? defaultMappingFor(key);
 
             return (
               <div
