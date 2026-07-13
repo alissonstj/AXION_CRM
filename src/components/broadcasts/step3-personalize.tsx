@@ -142,7 +142,7 @@ export function Step3Personalize({
   const bodyText = content.kind === 'template' ? content.template.body_text : content.text;
 
   const placeholders = useMemo(() => {
-    const pattern = content.kind === 'template' ? /\{\{(\d+)\}\}/g : /\{\{([a-zA-Z_][\w:]*)\}\}/g;
+    const pattern = content.kind === 'template' ? /\{\{(\d+)\}\}/g : /\{\{([a-zA-Z_][\w:-]*)\}\}/g;
     const matches = bodyText.match(pattern);
     if (!matches) return [];
     return [...new Set(matches)].sort();
