@@ -682,6 +682,17 @@
         "createFirst": "Create a template in Settings first.",
         "errorLoad": "Failed to load templates"
       },
+      "composeMessage": {
+        "title": "Compose Message",
+        "subtitle": "Write a free-form message — no template needed on Evolution.",
+        "textLabel": "Message",
+        "textPlaceholder": "Hi {{name}}, ...",
+        "textHint": "Use {{name}}, {{phone}}, {{email}}, {{company}}, or {{custom:field}} — you'll map each one to a real value on the next step.",
+        "mediaLabel": "Attach media (optional)",
+        "mediaTypeLabel": "Media type",
+        "mediaUrlPlaceholder": "https://...",
+        "errorEmpty": "Write a message or attach media before continuing."
+      },
       "selectAudience": {
         "title": "Select Audience",
         "subtitle": "Choose who will receive this broadcast.",

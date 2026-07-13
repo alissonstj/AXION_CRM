@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import { MessageTemplate } from '@/types';
+import type { BroadcastComposeContent, BroadcastMediaType } from '@/types';
 import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
+import { Step1ComposeMessage } from '@/components/broadcasts/step1-compose-message';
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
@@ -28,6 +30,11 @@ export default function NewBroadcastPage() {
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
+  const [provider, setProvider] = useState<'meta' | 'evolution'>('meta');
+  const [providerLoaded, setProviderLoaded] = useState(false);
+  const [messageText, setMessageText] = useState('');
+  const [messageMediaUrl, setMessageMediaUrl] = useState('');
+  const [messageMediaType, setMessageMediaType] = useState<BroadcastMediaType | null>(null);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
   const [audience, setAudience] = useState<{
     type: 'all' | 'tags' | 'custom_field' | 'csv';
@@ -45,6 +52,20 @@ export default function NewBroadcastPage() {
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+
+  useEffect(() => {
+    if (!accountId) return;
+    const supabase = createClient();
+    supabase
+      .from('whatsapp_config')
+      .select('provider')
+      .eq('account_id', accountId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setProvider((data?.provider as 'meta' | 'evolution') ?? 'meta');
+        setProviderLoaded(true);
+      });
+  }, [accountId]);
 
   async function handleSend() {
     if (!template) return;
@@ -129,6 +150,13 @@ export default function NewBroadcastPage() {
     router.push('/broadcasts');
   }
 
+  const content: BroadcastComposeContent | null =
+    provider === 'evolution'
+      ? { kind: 'freeform', text: messageText, mediaUrl: messageMediaUrl, mediaType: messageMediaType }
+      : template
+        ? { kind: 'template', template }
+        : null;
+
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       {/* Header */}
@@ -188,10 +216,22 @@ export default function NewBroadcastPage() {
             pointerEvents: isProcessing ? 'none' : 'auto',
           }}
         >
-          {currentStep === 0 && (
+          {currentStep === 0 && providerLoaded && provider === 'meta' && (
             <Step1ChooseTemplate
               selectedTemplate={template}
               onSelect={setTemplate}
+              onNext={() => setCurrentStep(1)}
+              onBack={() => router.push('/broadcasts')}
+            />
+          )}
+          {currentStep === 0 && providerLoaded && provider === 'evolution' && (
+            <Step1ComposeMessage
+              text={messageText}
+              onTextChange={setMessageText}
+              mediaUrl={messageMediaUrl}
+              onMediaUrlChange={setMessageMediaUrl}
+              mediaType={messageMediaType}
+              onMediaTypeChange={setMessageMediaType}
               onNext={() => setCurrentStep(1)}
               onBack={() => router.push('/broadcasts')}
             />
