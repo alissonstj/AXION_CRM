@@ -345,6 +345,20 @@ export interface MessageTemplate {
   created_at: string;
 }
 
+export type BroadcastMediaType = 'image' | 'video' | 'document' | 'audio';
+
+/** What Step 1 of the broadcast wizard produced, passed through Steps
+ *  3-4 and the send route. `kind` drives which fields are read —
+ *  mirrors the `broadcasts.kind` column (migration 039). */
+export type BroadcastComposeContent =
+  | { kind: 'template'; template: MessageTemplate }
+  | {
+      kind: 'freeform';
+      text: string;
+      mediaUrl: string;
+      mediaType: BroadcastMediaType | null;
+    };
+
 export interface Pipeline {
   id: string;
   user_id: string;
