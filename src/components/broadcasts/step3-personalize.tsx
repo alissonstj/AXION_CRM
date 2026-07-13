@@ -195,7 +195,7 @@ export function Step3Personalize({
   }, [placeholders, variables]);
 
   function updateVariable(key: string, patch: Partial<VariableMapping>) {
-    const current = variables[key] ?? { type: 'static' as VariableType, value: '' };
+    const current = variables[key] ?? defaultMappingFor(key);
     onUpdate({
       ...variables,
       [key]: { ...current, ...patch },

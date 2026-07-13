@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -150,12 +150,12 @@ export default function NewBroadcastPage() {
     router.push('/broadcasts');
   }
 
-  const content: BroadcastComposeContent | null =
-    provider === 'evolution'
-      ? { kind: 'freeform', text: messageText, mediaUrl: messageMediaUrl, mediaType: messageMediaType }
-      : template
-        ? { kind: 'template', template }
-        : null;
+  const content: BroadcastComposeContent | null = useMemo(() => {
+    if (provider === 'evolution') {
+      return { kind: 'freeform', text: messageText, mediaUrl: messageMediaUrl, mediaType: messageMediaType };
+    }
+    return template ? { kind: 'template', template } : null;
+  }, [provider, template, messageText, messageMediaUrl, messageMediaType]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
