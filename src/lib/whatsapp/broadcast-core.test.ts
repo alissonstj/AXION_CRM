@@ -34,3 +34,28 @@ describe('createBroadcast validation', () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe('createBroadcast — provider guard', () => {
+  // Public v1 broadcasts are template-only by design; access_token is
+  // NULL for provider='evolution' rows (migration 040). This pins the
+  // guard added alongside that migration: an Evolution-connected
+  // account must get a clear 400, not decrypt() throwing on null.
+  function dbWithConfig(config: Record<string, unknown> | null): SupabaseClient {
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      single: async () => ({ data: config, error: config ? null : { message: 'not found' } }),
+    };
+    return { from: () => chain } as unknown as SupabaseClient;
+  }
+
+  it('rejects a provider=evolution account with a clear message instead of crashing', async () => {
+    const db = dbWithConfig({ id: 'cfg-1', provider: 'evolution', access_token: null, phone_number_id: null });
+    await expect(
+      createBroadcast(db, 'acc', 'user', {
+        templateName: 'promo',
+        recipients: [{ to: '+14155550123' }],
+      })
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400, message: expect.stringMatching(/Meta/) });
+  });
+});

@@ -123,6 +123,17 @@ export async function createBroadcast(
       400
     );
   }
+  // This endpoint is template-only by design (Phase 3's explicit scope
+  // decision) and access_token is NULL for provider='evolution' rows
+  // since migration 040 — guard explicitly instead of letting decrypt()
+  // throw an opaque TypeError for an Evolution-connected account.
+  if (config.provider !== 'meta') {
+    throw new BroadcastError(
+      'bad_request',
+      'Templates require a Meta-connected account.',
+      400
+    );
+  }
   const accessToken = decrypt(config.access_token);
 
   // Template row (once) for header/button components; guard a
