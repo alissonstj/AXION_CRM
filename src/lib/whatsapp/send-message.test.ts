@@ -1,6 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+const mockSendText = vi.fn();
+vi.mock('@/lib/channels/factory', () => ({
+  getChannelForAccount: vi.fn(async () => ({
+    id: 'evolution',
+    sender: { sendText: mockSendText },
+  })),
+}));
+vi.mock('@/lib/flows/admin-client', () => ({
+  supabaseAdmin: () => ({
+    from: () => ({
+      update: () => ({
+        eq: () => ({
+          eq: () => ({
+            eq: async () => ({ error: null }),
+          }),
+        }),
+      }),
+    }),
+  }),
+}));
+
 import {
   sendMessageToConversation,
   SendMessageError,
@@ -146,6 +167,67 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
       })
     ).rejects.toThrow('reached DB');
     expect(spy).toHaveBeenCalledWith('conversations');
+  });
+});
+
+describe('sendMessageToConversation — Evolution provider (full DB path)', () => {
+  // whatsapp_config.access_token is NULL for provider='evolution' rows
+  // (migration 040). Before the fix, this unconditionally decrypted it
+  // for every message type — not just 'template', the only type that
+  // actually uses it — so any real reply on a connected Evolution
+  // account crashed with "Cannot read properties of null (reading
+  // 'split')" instead of sending. This pins the fix: a non-template
+  // send must reach the provider and succeed without touching
+  // access_token at all.
+  function makeEvolutionDb(): SupabaseClient {
+    const conversation = {
+      id: 'cv-1',
+      contact: { id: 'contact-1', phone: '+14155550123' },
+    };
+    const config = {
+      id: 'cfg-1',
+      provider: 'evolution',
+      access_token: null,
+      phone_number_id: null,
+    };
+    let lastTable = '';
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      single: async () => {
+        if (lastTable === 'conversations') return { data: conversation, error: null };
+        if (lastTable === 'whatsapp_config') return { data: config, error: null };
+        if (lastTable === 'messages') return { data: { id: 'msg-1' }, error: null };
+        return { data: null, error: null };
+      },
+      maybeSingle: async () => ({ data: null, error: null }),
+      insert: () => chain,
+      update: () => chain,
+    };
+    return { from: (t: string) => { lastTable = t; return chain; } } as unknown as SupabaseClient;
+  }
+
+  it('sends a text reply on an Evolution account without decrypting access_token', async () => {
+    mockSendText.mockReset().mockResolvedValue({ providerMessageId: 'evo-msg-1' });
+    const result = await sendMessageToConversation(makeEvolutionDb(), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'hey there',
+    });
+    expect(result).toEqual({ messageId: 'msg-1', whatsappMessageId: 'evo-msg-1' });
+    expect(mockSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '14155550123', text: 'hey there' })
+    );
+  });
+
+  it('rejects a template send on an Evolution account with a clear error, not a crash', async () => {
+    await expect(
+      sendMessageToConversation(makeEvolutionDb(), 'acct-1', {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'promo',
+      })
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
   });
 });
 

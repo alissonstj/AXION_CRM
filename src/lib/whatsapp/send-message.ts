@@ -257,24 +257,6 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
-
-  // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
-    void db
-      .from('whatsapp_config')
-      .update({ access_token: encrypt(accessToken) })
-      .eq('id', config.id)
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) {
-          console.warn(
-            '[send-message] access_token GCM upgrade failed:',
-            error.message
-          );
-        }
-      });
-  }
-
   // Resolve the reply target to its Meta message_id. The parent must
   // belong to this same conversation — otherwise a caller could quote
   // messages they can't see by guessing UUIDs.
@@ -322,6 +304,42 @@ export async function sendMessageToConversation(
       );
     }
     templateRow = data ?? null;
+  }
+
+  // access_token is Meta-only (NULL for provider='evolution' rows since
+  // migration 040) and only ever consumed inside attemptTemplate below —
+  // decrypt it lazily, gated on actually being a template send, instead
+  // of unconditionally for every message type. Templates are Meta-only
+  // by design (outside the ChannelSender interface), so guard the
+  // provider explicitly here too, same pattern as the other Meta/
+  // Evolution split in src/app/api/whatsapp/broadcast/route.ts.
+  let accessToken = '';
+  if (messageType === 'template') {
+    if (config.provider !== 'meta') {
+      throw new SendMessageError(
+        'bad_request',
+        'Templates require a Meta-connected account.',
+        400
+      );
+    }
+
+    accessToken = decrypt(config.access_token);
+
+    // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
+    if (isLegacyFormat(config.access_token)) {
+      void db
+        .from('whatsapp_config')
+        .update({ access_token: encrypt(accessToken) })
+        .eq('id', config.id)
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error) {
+            console.warn(
+              '[send-message] access_token GCM upgrade failed:',
+              error.message
+            );
+          }
+        });
+    }
   }
 
   // Template attempt, retried locally across phone-number variants when
