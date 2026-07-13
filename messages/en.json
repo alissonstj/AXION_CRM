@@ -1492,6 +1492,10 @@
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
       "metaDocs": "Meta WhatsApp API Documentation",
+      "channelSelector": {
+        "meta": "Meta Cloud API",
+        "evolution": "Evolution API (QR code)"
+      },
       "evolution": {
         "title": "WhatsApp connection (Evolution API)",
         "description": "Connect a number by scanning a QR code — no Meta Business account needed.",
