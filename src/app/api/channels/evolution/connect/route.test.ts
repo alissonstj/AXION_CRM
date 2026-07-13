@@ -4,6 +4,7 @@ const mockUser = { id: 'user-1' };
 let mockProfile: { account_id: string } | null = { account_id: 'acc-1' };
 let mockConfig: Record<string, unknown> | null = null;
 let lastUpsert: Record<string, unknown> | null = null;
+let capturedProviderConfig: Record<string, unknown> | null = null;
 
 function makeSupabase() {
   let lastTable = '';
@@ -40,14 +41,21 @@ vi.mock('@/lib/channels/providers/evolution', () => ({
   // https://vitest.dev/api/vi#vi-spyon. The brief's arrow-fn sketch throws
   // "is not a constructor" here; this is behaviourally identical (returns
   // an object exposing `disconnect`), just constructor-callable.
-  EvolutionProvider: vi.fn().mockImplementation(function () { return { disconnect: mockDisconnect }; }),
+  EvolutionProvider: vi.fn().mockImplementation(function (config: Record<string, unknown>) {
+    capturedProviderConfig = config;
+    return { disconnect: mockDisconnect };
+  }),
 }));
 
 beforeEach(() => {
   mockProfile = { account_id: 'acc-1' };
   mockConfig = null;
   lastUpsert = null;
+  capturedProviderConfig = null;
   mockDisconnect.mockReset().mockResolvedValue(undefined);
+  process.env.EVOLUTION_API_KEY = 'test-admin-key';
+  process.env.EVOLUTION_API_URL = 'http://localhost:3001';
+  process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000';
 });
 
 import { POST, DELETE } from './route';
@@ -94,5 +102,8 @@ describe('DELETE /api/channels/evolution/connect', () => {
     const res = await DELETE(new Request('http://localhost/api/channels/evolution/connect', { method: 'DELETE' }));
     expect(res.status).toBe(200);
     expect(mockDisconnect).toHaveBeenCalled();
+    expect(capturedProviderConfig).toMatchObject({
+      adminApiKey: expect.any(String),
+    });
   });
 });

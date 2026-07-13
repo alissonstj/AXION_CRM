@@ -67,7 +67,12 @@ export async function POST(_request: Request) {
     evolution_last_error: null,
   };
 
-  await supabase.from('whatsapp_config').upsert(update, { onConflict: 'account_id' }).select().single();
+  const { error: upsertError } = await supabase.from('whatsapp_config').upsert(update, { onConflict: 'account_id' }).select().single();
+
+  if (upsertError) {
+    console.error('[evolution connect] failed to save config:', upsertError);
+    return NextResponse.json({ error: 'Failed to save connection state' }, { status: 500 });
+  }
 
   return NextResponse.json({ status: 'connecting', qrCode: qrCode ?? null }, { status: 200 });
 }
