@@ -58,6 +58,13 @@ export async function POST(_request: Request) {
 
   const update = {
     account_id: accountId,
+    // `user_id` is NOT NULL on whatsapp_config (migration 001) and was
+    // never relaxed when account_id became the tenancy key (migration
+    // 017) — every insert must supply it, same convention as
+    // src/app/api/whatsapp/config/route.ts's insert branch. Upsert
+    // resends it on every call, which is a harmless no-op write on the
+    // update path (same value already stored).
+    user_id: user.id,
     provider: 'evolution' as const,
     evolution_instance_name: instanceName,
     evolution_instance_token: encrypt(instanceToken),

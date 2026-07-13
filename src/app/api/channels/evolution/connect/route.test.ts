@@ -69,7 +69,7 @@ describe('POST /api/channels/evolution/connect', () => {
     const json = await res.json();
     expect(json).toEqual({ status: 'connecting', qrCode: 'data:image/png;base64,AAA' });
     expect(lastUpsert).toMatchObject({
-      account_id: 'acc-1', provider: 'evolution',
+      account_id: 'acc-1', user_id: 'user-1', provider: 'evolution',
       evolution_instance_token: 'enc:fresh-token',
       evolution_qr_code: 'data:image/png;base64,AAA',
     });
