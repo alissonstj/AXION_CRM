@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { MessageTemplate } from '@/types';
+import type { BroadcastComposeContent } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,7 +26,7 @@ interface AudienceConfig {
 interface Step4Props {
   name: string;
   onNameChange: (name: string) => void;
-  template: MessageTemplate;
+  content: BroadcastComposeContent;
   audience: AudienceConfig;
   onSend: () => void;
   onSaveDraft?: () => void;
@@ -38,7 +38,7 @@ interface Step4Props {
 export function Step4ScheduleSend({
   name,
   onNameChange,
-  template,
+  content,
   audience,
   onSend,
   onSaveDraft,
@@ -117,8 +117,12 @@ export function Step4ScheduleSend({
         <p className="text-sm font-medium text-foreground">{t('scheduleSend.summary')}</p>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            <p className="text-xs text-muted-foreground">{t('scheduleSend.template')}</p>
-            <p className="text-foreground">{template.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {content.kind === 'template' ? t('scheduleSend.template') : t('scheduleSend.messagePreview')}
+            </p>
+            <p className="text-foreground line-clamp-2">
+              {content.kind === 'template' ? content.template.name : content.text || '—'}
+            </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('scheduleSend.audience')}</p>
@@ -137,10 +141,12 @@ export function Step4ScheduleSend({
               )}
             </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Language</p>
-            <p className="text-foreground">{template.language ?? 'en_US'}</p>
-          </div>
+          {content.kind === 'template' && (
+            <div>
+              <p className="text-xs text-muted-foreground">Language</p>
+              <p className="text-foreground">{content.template.language ?? 'en_US'}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -203,11 +209,20 @@ export function Step4ScheduleSend({
             <DialogHeader>
               <DialogTitle className="text-popover-foreground">Confirm Broadcast</DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                You are about to send this broadcast to{' '}
-                <span className="font-medium text-popover-foreground">{estimatedReach.toLocaleString()}</span>{' '}
-                contacts using the{' '}
-                <span className="font-medium text-popover-foreground">{template.name}</span> template.
-                This action cannot be undone.
+                {content.kind === 'template' ? (
+                  <>
+                    You are about to send this broadcast to{' '}
+                    <span className="font-medium text-popover-foreground">{estimatedReach.toLocaleString()}</span>{' '}
+                    contacts using the{' '}
+                    <span className="font-medium text-popover-foreground">{content.template.name}</span> template.
+                    This action cannot be undone.
+                  </>
+                ) : (
+                  <>
+                    {t('scheduleSend.confirmFreeform', { count: estimatedReach.toLocaleString() })} This action
+                    cannot be undone.
+                  </>
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

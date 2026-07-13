@@ -764,6 +764,8 @@
         "broadcastNamePlaceholder": "e.g., Summer Promo",
         "summary": "Summary",
         "template": "Template:",
+        "messagePreview": "Message",
+        "confirmFreeform": "You are about to send this broadcast to {count} contacts as a free-text message.",
         "audience": "Audience:",
         "audienceAll": "All contacts",
         "audienceTags": "Filtered by tags",
