@@ -1491,7 +1491,21 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "evolution": {
+        "title": "WhatsApp connection (Evolution API)",
+        "description": "Connect a number by scanning a QR code — no Meta Business account needed.",
+        "connect": "Connect",
+        "connecting": "Connecting…",
+        "disconnect": "Disconnect",
+        "disconnecting": "Disconnecting…",
+        "statusConnected": "Connected",
+        "statusConnecting": "Waiting for QR scan",
+        "statusDisconnected": "Not connected",
+        "statusError": "Connection failed",
+        "scanHint": "Open WhatsApp on your phone → Linked devices → Link a device, then scan this code.",
+        "qrExpiredHint": "This QR expired — generating a new one…"
+      }
     },
     "sections": {
       "overview": "Overview",
