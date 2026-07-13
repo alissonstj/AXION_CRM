@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
-import { Contact, MessageTemplate } from '@/types';
+import { Contact } from '@/types';
+import type { BroadcastComposeContent } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
 
@@ -36,15 +37,11 @@ export type VariableMapping =
 
 interface BroadcastPayload {
   name: string;
-  template: MessageTemplate;
+  content: BroadcastComposeContent;
   audience: AudienceConfig;
   variables: Record<string, VariableMapping>;
-  /**
-   * Media URL for an IMAGE/VIDEO/DOCUMENT header. Required at send
-   * time for media-header templates — Meta rejects the send without
-   * it. Passed through as `messageParams.headerMediaUrl`; the builder
-   * falls back to the template's stored URL only when this is empty.
-   */
+  /** Media URL for a Meta template's IMAGE/VIDEO/DOCUMENT header.
+   *  Ignored for freeform content — that media lives in `content`. */
   headerMediaUrl?: string;
 }
 
@@ -84,6 +81,27 @@ type CustomValueIndex = Map<string, Map<string, string>>;
  * built-in-field mappings resolve synchronously; custom fields read
  * from a pre-built index to avoid N+1 queries during the send loop.
  */
+function resolveSingleVariable(
+  mapping: VariableMapping,
+  contact: Contact,
+  customValues?: Map<string, string>,
+): string {
+  if (mapping.type === 'static') return mapping.value;
+
+  if (mapping.type === 'field') {
+    const fieldMap: Record<string, string | undefined> = {
+      name: contact.name,
+      phone: contact.phone,
+      email: contact.email,
+      company: contact.company,
+    };
+    return fieldMap[mapping.value] ?? '';
+  }
+
+  // custom_field
+  return customValues?.get(mapping.value) ?? '';
+}
+
 export function resolveVariables(
   variables: Record<string, VariableMapping>,
   contact: Contact,
@@ -98,23 +116,7 @@ export function resolveVariables(
     return a.localeCompare(b);
   });
 
-  return keys.map((key) => {
-    const v = variables[key];
-    if (v.type === 'static') return v.value;
-
-    if (v.type === 'field') {
-      const fieldMap: Record<string, string | undefined> = {
-        name: contact.name,
-        phone: contact.phone,
-        email: contact.email,
-        company: contact.company,
-      };
-      return fieldMap[v.value] ?? '';
-    }
-
-    // custom_field
-    return customValues?.get(v.value) ?? '';
-  });
+  return keys.map((key) => resolveSingleVariable(variables[key], contact, customValues));
 }
 
 /**
@@ -353,15 +355,21 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
       // ── Step 2: Create broadcast row ──────────────────────────────
       setProgress(10);
+      const { content } = payload;
       const { data: broadcast, error: broadcastError } = await supabase
         .from('broadcasts')
         .insert({
           user_id: user.id,
           account_id: accountId,
           name: payload.name,
-          template_name: payload.template.name,
-          template_language: payload.template.language ?? 'en_US',
+          kind: content.kind,
+          provider: content.kind === 'freeform' ? 'evolution' : 'meta',
+          template_name: content.kind === 'template' ? content.template.name : null,
+          template_language: content.kind === 'template' ? (content.template.language ?? 'en_US') : null,
           template_variables: payload.variables,
+          message_text: content.kind === 'freeform' ? content.text : null,
+          message_media_url: content.kind === 'freeform' ? content.mediaUrl || null : null,
+          message_media_type: content.kind === 'freeform' ? content.mediaType : null,
           audience_filter: {
             type: payload.audience.type,
             tagIds: payload.audience.tagIds,
@@ -442,46 +450,67 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       const totalRecipients = recipients.length;
 
       // Media-header templates (image/video/document) require a media
-      // URL on every send. Collected in the personalize step and applied
-      // to all recipients; falls back to the template's stored URL on the
-      // server when omitted.
-      const headerType = payload.template.header_type;
+      // URL on every send; freeform media (if any) is already resolved
+      // in `content` and doesn't need this per-send lookup.
+      const headerType = content.kind === 'template' ? content.template.header_type : undefined;
       const isMediaHeader =
-        headerType === 'image' ||
-        headerType === 'video' ||
-        headerType === 'document';
+        headerType === 'image' || headerType === 'video' || headerType === 'document';
       const headerMediaUrl = payload.headerMediaUrl?.trim();
       const messageParams =
-        isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
+        content.kind === 'template' && isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
 
       for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
         const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
 
         const apiRecipients = batch
           .filter((r) => r.contact?.phone)
-          .map((r) => ({
-            phone: r.contact!.phone as string,
-            params: r.contact
-              ? resolveVariables(
-                  payload.variables,
-                  r.contact,
-                  customValueIndex.get(r.contact.id),
-                )
-              : [],
-            ...(messageParams ? { messageParams } : {}),
-          }));
+          .map((r) => {
+            if (content.kind === 'freeform' && r.contact) {
+              const customVals = customValueIndex.get(r.contact.id);
+              let resolvedText = content.text;
+              for (const [key, mapping] of Object.entries(payload.variables)) {
+                resolvedText = resolvedText.replaceAll(
+                  `{{${key}}}`,
+                  resolveSingleVariable(mapping, r.contact, customVals),
+                );
+              }
+              return { phone: r.contact.phone as string, resolvedText };
+            }
+            const resolvedValues = r.contact
+              ? resolveVariables(payload.variables, r.contact, customValueIndex.get(r.contact.id))
+              : [];
+            return {
+              phone: r.contact!.phone as string,
+              params: resolvedValues,
+              ...(messageParams ? { messageParams } : {}),
+            };
+          });
 
         if (apiRecipients.length === 0) continue;
 
         try {
+          const requestBody =
+            content.kind === 'template'
+              ? {
+                  kind: 'template' as const,
+                  recipients: apiRecipients,
+                  template_name: content.template.name,
+                  template_language: content.template.language ?? 'en_US',
+                }
+              : {
+                  kind: 'freeform' as const,
+                  recipients: apiRecipients.map((r) => ({
+                    phone: r.phone,
+                    text: (r as { resolvedText: string }).resolvedText,
+                  })),
+                  message_media_url: content.mediaUrl || undefined,
+                  message_media_type: content.mediaType ?? undefined,
+                };
+
           const res = await fetch('/api/whatsapp/broadcast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              recipients: apiRecipients,
-              template_name: payload.template.name,
-              template_language: payload.template.language ?? 'en_US',
-            }),
+            body: JSON.stringify(requestBody),
           });
 
           const data = await res.json();
