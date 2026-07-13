@@ -15,6 +15,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { getChannelForAccount, ChannelConfigError } from '@/lib/channels/factory'
 
 interface BroadcastResult {
   phone: string
@@ -97,6 +98,42 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
+
+    const kind: 'template' | 'freeform' = body.kind === 'freeform' ? 'freeform' : 'template'
+
+    let provider
+    try {
+      provider = await getChannelForAccount(accountId, supabase)
+    } catch (err) {
+      if (err instanceof ChannelConfigError) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
+          { status: 400 },
+        )
+      }
+      throw err
+    }
+
+    if (kind === 'template' && provider.id !== 'meta') {
+      return NextResponse.json(
+        { error: `Templates require the Meta provider (account is configured for "${provider.id}")` },
+        { status: 400 },
+      )
+    }
+    if (kind === 'freeform' && provider.id !== 'evolution') {
+      return NextResponse.json(
+        {
+          error:
+            'Free-form broadcast messages require the Evolution provider — Meta requires an approved template for business-initiated messages outside an active conversation.',
+        },
+        { status: 400 },
+      )
+    }
+
+    if (kind === 'freeform') {
+      return handleFreeformBroadcast(body, provider)
+    }
+
     const {
       recipients: newRecipients,
       phone_numbers,
@@ -260,4 +297,57 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+}
+
+async function handleFreeformBroadcast(
+  body: { recipients?: unknown; message_media_url?: string; message_media_type?: string },
+  provider: Awaited<ReturnType<typeof getChannelForAccount>>,
+): Promise<Response> {
+    interface FreeformRecipient { phone: string; text: string }
+    const recipients: FreeformRecipient[] = Array.isArray(body.recipients) ? (body.recipients as FreeformRecipient[]) : []
+    if (recipients.length === 0) {
+      return NextResponse.json({ error: 'recipients must be a non-empty array of { phone, text }' }, { status: 400 })
+    }
+
+    const mediaUrl: string | undefined = body.message_media_url || undefined
+    const mediaType = (body.message_media_type || undefined) as
+      | 'image'
+      | 'video'
+      | 'document'
+      | 'audio'
+      | undefined
+
+    const results: BroadcastResult[] = []
+    let sentCount = 0
+    let failedCount = 0
+
+    for (const recipient of recipients) {
+      const sanitized = sanitizePhoneForMeta(recipient.phone)
+      if (!isValidE164(sanitized)) {
+        results.push({ phone: recipient.phone, status: 'failed', error: 'Invalid phone number format' })
+        failedCount++
+        continue
+      }
+
+      try {
+        const result = mediaUrl
+          ? await provider.sender.sendMedia({
+              to: sanitized,
+              kind: mediaType ?? 'image',
+              link: mediaUrl,
+              caption: recipient.text || undefined,
+            })
+          : await provider.sender.sendText({ to: sanitized, text: recipient.text })
+
+        results.push({ phone: recipient.phone, status: 'sent', whatsapp_message_id: result.providerMessageId })
+        sentCount++
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error(`Failed to send freeform broadcast to ${recipient.phone}:`, errorMessage)
+        results.push({ phone: recipient.phone, status: 'failed', error: errorMessage })
+        failedCount++
+      }
+    }
+
+    return NextResponse.json({ success: true, total: recipients.length, sent: sentCount, failed: failedCount, results })
 }
