@@ -168,6 +168,25 @@ export function Step3Personalize({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, mediaHeaderType]);
 
+  // Persist the display default for every placeholder that doesn't have
+  // a real mapping yet. Without this, a placeholder whose *default* is
+  // non-empty (any recognized freeform field like {{name}}) could pass
+  // the unmappedKeys gate below without ever actually being written into
+  // `variables` — shipping the literal, unsubstituted "{{name}}" text to
+  // every recipient once the user reaches Send.
+  useEffect(() => {
+    const missing = placeholders
+      .map((p) => p.replace(/^\{\{|\}\}$/g, ''))
+      .filter((key) => !variables[key]);
+    if (missing.length === 0) return;
+    const patch: Record<string, VariableMapping> = {};
+    for (const key of missing) {
+      patch[key] = defaultMappingFor(key);
+    }
+    onUpdate({ ...variables, ...patch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeholders]);
+
   const headerMediaError = useMemo<'missing' | 'invalid' | null>(() => {
     if (!mediaHeaderType) return null;
     const value = headerMediaUrl.trim();
