@@ -160,10 +160,14 @@ export interface EvolutionSendResult {
 
 /** POST /message/sendText/{instance}. Flat JSON body — NOT the nested
  *  `{textMessage:{text}}` shape the doc site (incorrectly) describes;
- *  confirmed against the upstream DTO (SendTextDto extends Metadata). */
+ *  confirmed against the upstream DTO (SendTextDto extends Metadata).
+ *  `linkPreview: true` is always sent — same "always on, harmless
+ *  no-op without a URL" reasoning as Meta's preview_url. This field is
+ *  documented in the DTO (see design doc's sendText shape) but, unlike
+ *  `quoted`, was not independently live-verified this session. */
 export async function sendEvolutionText(args: SendEvolutionTextArgs): Promise<EvolutionSendResult> {
   const { baseUrl, apiKey, instanceName, to, text, quoted } = args;
-  const body: Record<string, unknown> = { number: to, text };
+  const body: Record<string, unknown> = { number: to, text, linkPreview: true };
   if (quoted) body.quoted = { key: quoted };
   const response = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
     method: 'POST',
@@ -207,4 +211,27 @@ export async function sendEvolutionMedia(args: SendEvolutionMediaArgs): Promise<
   if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
   const data = await response.json();
   return { messageId: data.key?.id };
+}
+
+export interface MarkEvolutionAsReadArgs extends EvolutionAuth {
+  instanceName: string;
+  /** Always the customer's message — `fromMe: false` is not a caller
+   *  choice, see MarkAsReadArgs in types.ts. */
+  remoteJid: string;
+  messageId: string;
+}
+
+/** POST /chat/markMessageAsRead/{instance}. Confirmed live 2026-07-14
+ *  against a real historical message: returns
+ *  {"message":"Read messages","read":"success"}, HTTP 201. Takes an
+ *  array (`readMessages`) even for a single message — no batching
+ *  need here, this provider always marks exactly one. */
+export async function markEvolutionMessageAsRead(args: MarkEvolutionAsReadArgs): Promise<void> {
+  const { baseUrl, apiKey, instanceName, remoteJid, messageId } = args;
+  const response = await fetch(`${baseUrl}/chat/markMessageAsRead/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({ readMessages: [{ remoteJid, fromMe: false, id: messageId }] }),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
 }

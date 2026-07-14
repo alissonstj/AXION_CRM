@@ -6,6 +6,7 @@ import {
   deleteEvolutionInstance,
   sendEvolutionText,
   sendEvolutionMedia,
+  markEvolutionMessageAsRead,
 } from './evolution-api';
 
 const BASE = { baseUrl: 'http://evo.local', apiKey: 'k' };
@@ -117,7 +118,7 @@ describe('sendEvolutionText', () => {
     expect(result).toEqual({ messageId: 'WA-ID-1' });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://evo.local/message/sendText/axion-acc1');
-    expect(JSON.parse(init?.body as string)).toEqual({ number: '5511999999999', text: 'oi' });
+    expect(JSON.parse(init?.body as string)).toEqual({ number: '5511999999999', text: 'oi', linkPreview: true });
   });
 
   it('wraps `quoted` as { key: quoted } — confirmed live 2026-07-14 against a real quoted reply', async () => {
@@ -131,7 +132,7 @@ describe('sendEvolutionText', () => {
     });
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(init?.body as string)).toEqual({
-      number: '5511999999999', text: 'resposta',
+      number: '5511999999999', text: 'resposta', linkPreview: true,
       quoted: { key: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: true, id: 'PARENT-ID' } },
     });
   });
@@ -144,6 +145,16 @@ describe('sendEvolutionText', () => {
     await sendEvolutionText({ ...BASE, instanceName: 'axion-acc1', to: '5511999999999', text: 'oi' });
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(init?.body as string)).not.toHaveProperty('quoted');
+  });
+
+  it('always sends linkPreview: true', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'WA-ID-1d' } }),
+    } as Response);
+    await sendEvolutionText({ ...BASE, instanceName: 'axion-acc1', to: '5511999999999', text: 'confira https://x.com' });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toMatchObject({ linkPreview: true });
   });
 });
 
@@ -179,5 +190,30 @@ describe('sendEvolutionMedia', () => {
     expect(JSON.parse(init?.body as string)).toMatchObject({
       quoted: { key: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'PARENT-ID' } },
     });
+  });
+});
+
+describe('markEvolutionMessageAsRead', () => {
+  it('POSTs readMessages: [{remoteJid, fromMe: false, id}] — confirmed live 2026-07-14 (HTTP 201, "read":"success")', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: 'Read messages', read: 'success' }),
+    } as Response);
+    await markEvolutionMessageAsRead({
+      ...BASE, instanceName: 'axion-acc1',
+      remoteJid: '5511999999999@s.whatsapp.net', messageId: 'MSG-ID',
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/chat/markMessageAsRead/axion-acc1');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      readMessages: [{ remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'MSG-ID' }],
+    });
+  });
+
+  it('throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 404, json: async () => ({}) } as Response);
+    await expect(
+      markEvolutionMessageAsRead({ ...BASE, instanceName: 'axion-acc1', remoteJid: 'x@s.whatsapp.net', messageId: 'y' }),
+    ).rejects.toThrow('Evolution API error: 404');
   });
 });

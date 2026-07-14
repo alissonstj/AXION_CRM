@@ -3,6 +3,8 @@ import {
   INTERACTIVE_LIMITS,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTextMessage,
+  markMessageAsRead,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -265,5 +267,78 @@ describe("sendInteractiveList — validation", () => {
         },
       },
     });
+  });
+});
+
+describe("sendTextMessage — preview_url", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("always sets text.preview_url = true", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ messages: [{ id: "wamid.TXT" }] }), { status: 200 });
+      }),
+    );
+
+    await sendTextMessage({
+      phoneNumberId: "test-phone",
+      accessToken: "test-token",
+      to: "1234567890",
+      text: "confira https://example.com",
+    });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.body).toMatchObject({
+      text: { body: "confira https://example.com", preview_url: true },
+    });
+  });
+});
+
+describe("markMessageAsRead", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("POSTs status:read + message_id, no recipient field", async () => {
+    let captured: { url: string; method: string; body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        captured = { url, method: init.method ?? "GET", body: JSON.parse(String(init.body)) };
+        return new Response("{}", { status: 200 });
+      }),
+    );
+
+    await markMessageAsRead({
+      phoneNumberId: "test-phone",
+      accessToken: "test-token",
+      messageId: "wamid.CUSTOMER-MSG",
+    });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.method).toBe("POST");
+    expect(captured!.url).toContain("test-phone/messages");
+    expect(captured!.body).toEqual({
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: "wamid.CUSTOMER-MSG",
+    });
+  });
+
+  it("throws the Meta error message on a non-ok response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: { message: "Message not found" } }), { status: 404 }),
+      ),
+    );
+    await expect(
+      markMessageAsRead({ phoneNumberId: "test-phone", accessToken: "test-token", messageId: "x" }),
+    ).rejects.toThrow("Message not found");
   });
 });

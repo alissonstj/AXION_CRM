@@ -435,6 +435,16 @@ export function MessageThread({
       .then(({ error }) => {
         if (error) console.error("Failed to reset unread_count:", error);
       });
+
+    // Same trigger as the CRM-local unread reset above — also tell
+    // WhatsApp the contact's messages were seen, so their app shows
+    // blue ticks. Fire-and-forget: a failed read receipt has no
+    // user-visible consequence worth surfacing here.
+    fetch("/api/whatsapp/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }).catch((err) => console.warn("Failed to send read receipt:", err));
   }, [conversationId, hasUnread]);
 
   // Auto-scroll to bottom on new messages

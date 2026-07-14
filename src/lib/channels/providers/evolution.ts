@@ -5,6 +5,7 @@ import {
   connectEvolutionInstance,
   logoutEvolutionInstance,
   deleteEvolutionInstance,
+  markEvolutionMessageAsRead,
   type EvolutionMediaType,
   type EvolutionQuotedRef,
 } from '@/lib/whatsapp/evolution-api';
@@ -13,6 +14,7 @@ import type {
   ChannelProviderId,
   ChannelSender,
   ConnectionState,
+  MarkAsReadArgs,
   NormalizedInbound,
   OutboundResult,
   SendInteractiveButtonsArgs,
@@ -109,6 +111,13 @@ export class EvolutionProvider implements ChannelProvider {
           targetFromMe: args.targetFromMe, emoji: args.emoji,
         });
         return { providerMessageId: messageId };
+      },
+      markAsRead: async (args: MarkAsReadArgs): Promise<void> => {
+        await markEvolutionMessageAsRead({
+          baseUrl, apiKey, instanceName,
+          remoteJid: `${args.to}@s.whatsapp.net`,
+          messageId: args.providerMessageId,
+        });
       },
     };
   }

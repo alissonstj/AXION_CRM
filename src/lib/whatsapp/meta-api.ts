@@ -239,7 +239,10 @@ export async function sendTextMessage(
     recipient_type: 'individual',
     to,
     type: 'text',
-    text: { body: text },
+    // preview_url tells WhatsApp to render a rich link-preview card for
+    // any URL in the body — documented Cloud API flag, harmless no-op
+    // when the text has no URL. Always on, not a per-call option.
+    text: { body: text, preview_url: true },
   }
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
@@ -701,6 +704,42 @@ export async function sendReactionMessage(
   }
   const data = await response.json()
   return { messageId: data.messages[0].id }
+}
+
+// ============================================================
+// Read receipts
+// ============================================================
+
+export interface MarkMessageAsReadArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's message_id of the customer's most recent message in the
+   *  chat — marks it and every earlier message in the same chat as
+   *  read (WhatsApp's own read-receipt semantics, not per-message). */
+  messageId: string
+}
+
+/** POST /{phone_number_id}/messages with status:"read" — documented,
+ *  stable Meta Cloud API endpoint (unlike Evolution's Baileys wrapper,
+ *  no history of doc-site inaccuracies for this one). */
+export async function markMessageAsRead(args: MarkMessageAsReadArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
 }
 
 // ============================================================
