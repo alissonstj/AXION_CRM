@@ -69,6 +69,19 @@ export interface SendInteractiveListArgs {
   contextProviderMessageId?: string;
 }
 
+export interface SendReactionArgs {
+  /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
+  to: string;
+  targetProviderMessageId: string;
+  /** A mensagem-alvo foi originalmente enviada por nós (agente) ou pelo
+   *  contato? A Evolution/Baileys precisa disso para montar a chave
+   *  completa da mensagem (`remoteJid` + `fromMe` + `id`) — a Meta
+   *  ignora este campo, o `targetProviderMessageId` já basta lá. */
+  targetFromMe: boolean;
+  /** String vazia remove a reação. */
+  emoji: string;
+}
+
 /** Contrato: todo `to` chega já sanitizado pelo caller (ex.:
  *  `sanitizePhoneForMeta` antes de chamar a Meta). O provedor não
  *  re-sanitiza — só lida com variantes de formatação/retry. */
@@ -77,6 +90,7 @@ export interface ChannelSender {
   sendMedia(args: SendMediaArgs): Promise<OutboundResult>;
   sendInteractiveButtons(args: SendInteractiveButtonsArgs): Promise<OutboundResult>;
   sendInteractiveList(args: SendInteractiveListArgs): Promise<OutboundResult>;
+  sendReaction(args: SendReactionArgs): Promise<OutboundResult>;
 }
 
 export type InboundKind =
