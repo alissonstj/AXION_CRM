@@ -25,6 +25,17 @@ export interface IngestContext {
   accountId: string
   configOwnerUserId: string
   db: SupabaseClient
+  /** Fired once, right after a brand-new contact row is created — never
+   *  for an existing contact matched by phone. Best-effort, provider-
+   *  specific hook: this file stays provider-agnostic (no opinion on
+   *  what a provider does here), so it's the caller's job to decide
+   *  whether to do anything at all. Currently only the Evolution
+   *  webhook route supplies one, to kick off a one-time avatar sync —
+   *  Meta's Cloud API has no endpoint for a customer's profile
+   *  picture, so its route passes none. Errors thrown by the hook are
+   *  swallowed here, matching this function's own best-effort
+   *  semantics elsewhere. */
+  onContactCreated?: (contact: { id: string; phone: string }) => void
 }
 
 /**
@@ -56,6 +67,14 @@ export async function ingestInbound(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+
+  if (contactOutcome.wasCreated) {
+    try {
+      ctx.onContactCreated?.(contactRecord)
+    } catch (err) {
+      console.error('[ingest] onContactCreated hook threw:', err)
+    }
+  }
 
   // Find or create conversation
   const convResult = await findOrCreateConversation(

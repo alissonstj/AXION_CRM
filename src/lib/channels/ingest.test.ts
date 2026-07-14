@@ -13,6 +13,7 @@ vi.mock('@/lib/contacts/dedupe', () => ({
 }));
 
 import { ingestInbound } from './ingest';
+import { findExistingContact } from '@/lib/contacts/dedupe';
 
 // ------------------------------------------------------------
 // Chainable Supabase stub, scripted per table — same shape as
@@ -92,5 +93,49 @@ describe('ingestInbound', () => {
     );
     expect(inserts.messages).toHaveLength(1);
     expect(inserts.messages[0]).toMatchObject({ content_type: 'text', content_text: 'oi', sender_type: 'customer' });
+  });
+
+  it('fires onContactCreated with the new contact row when a contact is actually created', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    const onContactCreated = vi.fn();
+    await ingestInbound(
+      { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.a',
+        timestamp: new Date(), kind: 'text', text: 'oi' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db, onContactCreated },
+    );
+    expect(onContactCreated).toHaveBeenCalledTimes(1);
+    expect(onContactCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'contact-1' }));
+  });
+
+  it('does not fire onContactCreated when the contact already existed', async () => {
+    vi.mocked(findExistingContact).mockResolvedValueOnce({
+      id: 'existing-contact', phone: '15551234567', name: 'Ana',
+    } as never);
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    const onContactCreated = vi.fn();
+    await ingestInbound(
+      { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.b',
+        timestamp: new Date(), kind: 'text', text: 'oi de novo' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db, onContactCreated },
+    );
+    expect(onContactCreated).not.toHaveBeenCalled();
+  });
+
+  it('does not throw or abort ingestion when onContactCreated itself throws', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    const onContactCreated = vi.fn(() => {
+      throw new Error('boom');
+    });
+    await expect(
+      ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.c',
+          timestamp: new Date(), kind: 'text', text: 'oi' },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db, onContactCreated },
+      ),
+    ).resolves.toBeUndefined();
+    expect(inserts.messages).toHaveLength(1);
   });
 });
