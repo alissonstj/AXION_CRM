@@ -17,6 +17,7 @@ import type {
   SendInteractiveButtonsArgs,
   SendInteractiveListArgs,
   SendMediaArgs,
+  SendReactionArgs,
   SendTextArgs,
 } from '../types';
 
@@ -81,6 +82,16 @@ export class EvolutionProvider implements ChannelProvider {
           baseUrl, apiKey, instanceName, to: args.to, bodyText: args.bodyText,
           buttonLabel: args.buttonLabel, headerText: args.headerText,
           footerText: args.footerText, sections: args.sections,
+        });
+        return { providerMessageId: messageId };
+      },
+      // Same confidence tier as sendEvolutionButtons/sendEvolutionList
+      // above: documented Evolution API v2 shape, not live-verified.
+      sendReaction: async (args: SendReactionArgs): Promise<OutboundResult> => {
+        const { messageId } = await sendEvolutionReaction({
+          baseUrl, apiKey, instanceName, to: args.to,
+          targetMessageId: args.targetProviderMessageId,
+          targetFromMe: args.targetFromMe, emoji: args.emoji,
         });
         return { providerMessageId: messageId };
       },
@@ -273,6 +284,29 @@ function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | nul
     default:
       return { ...base, kind: 'text', text: `[Unsupported message type: ${data.messageType}]` };
   }
+}
+
+/** POST /message/sendReaction/{instance}. Documented Evolution API v2
+ *  shape — Baileys identifies the target by its full message key
+ *  (remoteJid + fromMe + id), not the id alone, so `targetFromMe`
+ *  (whether the original message was ours or the contact's) is
+ *  required to construct it correctly. Empty `emoji` removes the
+ *  reaction (same convention as the Meta side / message_reactions). */
+async function sendEvolutionReaction(
+  args: EvolutionAuth & { to: string; targetMessageId: string; targetFromMe: boolean; emoji: string },
+): Promise<{ messageId: string }> {
+  const { baseUrl, apiKey, instanceName, to, targetMessageId, targetFromMe, emoji } = args;
+  const response = await fetch(`${baseUrl}/message/sendReaction/${instanceName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: apiKey },
+    body: JSON.stringify({
+      key: { remoteJid: `${to}@s.whatsapp.net`, fromMe: targetFromMe, id: targetMessageId },
+      reaction: emoji,
+    }),
+  });
+  if (!response.ok) throw new Error(`Evolution API error: ${response.status}`);
+  const data = await response.json();
+  return { messageId: data.key?.id };
 }
 
 async function sendEvolutionList(

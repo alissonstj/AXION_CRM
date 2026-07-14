@@ -48,6 +48,55 @@ describe('EvolutionProvider.sender', () => {
     const provider = new EvolutionProvider(config);
     await expect(provider.sender.sendText({ to: '5511999999999', text: 'x' })).rejects.toThrow('boom');
   });
+
+  // sendReaction's HTTP call is local to evolution.ts (not exported from
+  // evolution-api.ts), same as sendInteractiveButtons/List — mocked via
+  // global.fetch directly, matching evolution-api.test.ts's convention.
+  it('sendReaction POSTs the full Baileys message key (remoteJid + fromMe + id) and the emoji', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'REACT-ID-1' } }),
+    } as Response);
+    const provider = new EvolutionProvider(config);
+
+    const result = await provider.sender.sendReaction({
+      to: '5511999999999', targetProviderMessageId: 'MSG-ID-1', targetFromMe: false, emoji: '👍',
+    });
+
+    expect(result).toEqual({ providerMessageId: 'REACT-ID-1' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/message/sendReaction/axion-acc1');
+    expect(init?.headers).toMatchObject({ apikey: 'instance-token' });
+    const body = JSON.parse(init?.body as string);
+    expect(body).toEqual({
+      key: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'MSG-ID-1' },
+      reaction: '👍',
+    });
+  });
+
+  it('sendReaction with an empty emoji removes the reaction (still sends the empty string)', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'REACT-ID-2' } }),
+    } as Response);
+    const provider = new EvolutionProvider(config);
+
+    await provider.sender.sendReaction({
+      to: '5511999999999', targetProviderMessageId: 'MSG-ID-1', targetFromMe: true, emoji: '',
+    });
+
+    const fetchMock = vi.mocked(global.fetch);
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body).toMatchObject({ key: { fromMe: true }, reaction: '' });
+  });
+
+  it('sendReaction throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 404 } as Response);
+    const provider = new EvolutionProvider(config);
+    await expect(
+      provider.sender.sendReaction({ to: '5511999999999', targetProviderMessageId: 'x', targetFromMe: false, emoji: '👍' }),
+    ).rejects.toThrow('Evolution API error: 404');
+  });
 });
 
 describe('EvolutionProvider lifecycle', () => {

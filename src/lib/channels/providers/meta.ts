@@ -3,6 +3,7 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendReactionMessage,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils';
@@ -17,6 +18,7 @@ import type {
   SendInteractiveButtonsArgs,
   SendInteractiveListArgs,
   SendMediaArgs,
+  SendReactionArgs,
   SendTextArgs,
 } from '../types';
 
@@ -90,6 +92,15 @@ export class MetaProvider implements ChannelProvider {
             buttonLabel: args.buttonLabel, headerText: args.headerText,
             footerText: args.footerText, sections: args.sections,
             contextMessageId: args.contextProviderMessageId,
+          }),
+        ),
+      // targetFromMe is irrelevant to Meta — targetProviderMessageId
+      // alone identifies the message to react to.
+      sendReaction: (args: SendReactionArgs) =>
+        withPhoneVariantRetry(args.to, (to) =>
+          sendReactionMessage({
+            phoneNumberId, accessToken, to,
+            targetMessageId: args.targetProviderMessageId, emoji: args.emoji,
           }),
         ),
     };

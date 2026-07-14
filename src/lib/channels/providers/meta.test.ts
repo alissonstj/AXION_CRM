@@ -5,12 +5,14 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
   sendMediaMessage: vi.fn(),
   sendInteractiveButtons: vi.fn(),
   sendInteractiveList: vi.fn(),
+  sendReactionMessage: vi.fn(),
   verifyPhoneNumber: vi.fn(),
 }));
 
 import {
   sendTextMessage,
   sendMediaMessage,
+  sendReactionMessage,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { MetaProvider } from './meta';
@@ -67,6 +69,35 @@ describe('MetaProvider.sender', () => {
       phoneNumberId: 'PNID', accessToken: 'TOKEN', to: '+15551234567',
       kind: 'document', link: 'https://x/y.pdf', caption: 'nota', filename: 'y.pdf',
     }));
+  });
+
+  it('sendReaction forwards targetProviderMessageId + emoji, ignores targetFromMe', async () => {
+    vi.mocked(sendReactionMessage).mockResolvedValue({ messageId: 'wamid.4' });
+    const provider = new MetaProvider(cfg);
+
+    const result = await provider.sender.sendReaction({
+      to: '+15551234567', targetProviderMessageId: 'wamid.parent', targetFromMe: true, emoji: '👍',
+    });
+
+    expect(sendReactionMessage).toHaveBeenCalledWith({
+      phoneNumberId: 'PNID', accessToken: 'TOKEN', to: '+15551234567',
+      targetMessageId: 'wamid.parent', emoji: '👍',
+    });
+    expect(result).toEqual({ providerMessageId: 'wamid.4' });
+  });
+
+  it('sendReaction retries the next phone variant on "recipient not allowed"', async () => {
+    vi.mocked(sendReactionMessage)
+      .mockRejectedValueOnce(new Error('(#131030) Recipient phone number not in allowed list'))
+      .mockResolvedValueOnce({ messageId: 'wamid.5' });
+    const provider = new MetaProvider(cfg);
+
+    const result = await provider.sender.sendReaction({
+      to: '+5511987654321', targetProviderMessageId: 'wamid.parent', targetFromMe: false, emoji: '',
+    });
+
+    expect(sendReactionMessage).toHaveBeenCalledTimes(2);
+    expect(result.providerMessageId).toBe('wamid.5');
   });
 });
 
