@@ -456,7 +456,7 @@ function SendListForm({
   return (
     <>
       <TextRow
-        label="Body text"
+        label={t("bodyText")}
         value={cfg.text ?? ""}
         onChange={(v) => onUpdateConfig({ text: v })}
         rows={3}
@@ -498,7 +498,7 @@ function SendListForm({
                   size="sm"
                   onClick={() => removeSection(sIdx)}
                   className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                  aria-label="Remove section"
+                  aria-label={t("removeSectionAria")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -657,7 +657,7 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("pickTag")} />
               </SelectTrigger>
               <SelectContent>
                 {tags.map((t) => (
@@ -805,7 +805,7 @@ function SetTagForm({
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("pickTag")} />
               </SelectTrigger>
               <SelectContent>
                 {tags.map((t) => (
@@ -913,7 +913,7 @@ function SendMediaForm({
     async (file: File) => {
       if (file.size > MEDIA_MAX_BYTES) {
         toast.error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — limit is 16 MB.`,
+          t("fileTooLarge", { size: (file.size / 1024 / 1024).toFixed(1) }),
         );
         return;
       }
@@ -928,15 +928,15 @@ function SendMediaForm({
           media_url: publicUrl,
           filename: file.name,
         });
-        toast.success("File uploaded.");
+        toast.success(t("fileUploaded"));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed.";
+        const msg = err instanceof Error ? err.message : t("uploadFailed");
         toast.error(msg);
       } finally {
         setUploading(false);
       }
     },
-    [onUpdateConfig],
+    [onUpdateConfig, t],
   );
 
   const handleClear = () => {
