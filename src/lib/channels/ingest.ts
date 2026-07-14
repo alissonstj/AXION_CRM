@@ -91,6 +91,41 @@ export async function ingestInbound(
   if (!convResult) return
   const conversation = convResult.conversation
 
+  // Idempotency guard: Meta/Evolution can and do redeliver the same
+  // webhook payload (no ack fast enough, a transient error, etc.).
+  // Neither webhook route de-dupes before calling ingestInbound, and
+  // messages.message_id has no uniqueness constraint by design
+  // (migrations 009/036 — ids repeat across conversations/providers),
+  // so a redelivered message would otherwise insert a second `messages`
+  // row AND re-run the automation-trigger dispatch below from scratch —
+  // confirmed in production as the root cause of a real automation
+  // double/triple-sending the same message to the same contact. Scoped
+  // to (conversation_id, message_id), matching the same scoping
+  // lookupInternalIdByMetaId already uses elsewhere in this file, since
+  // message_id is only meaningful combined with the conversation.
+  //
+  // This is a check-then-act guard, not an atomic claim — it closes the
+  // gap for sequential retries (the actual observed failure mode:
+  // provider retries land seconds apart) but not a hypothetical
+  // simultaneous double-delivery. Closing that fully would need a
+  // unique constraint on messages(conversation_id, message_id), which
+  // migrations 009/036 deliberately chose not to add — out of scope for
+  // this fix.
+  const { data: existingDelivery } = await db
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversation.id)
+    .eq('message_id', inbound.providerMessageId)
+    .limit(1)
+    .maybeSingle()
+  if (existingDelivery) {
+    console.warn(
+      '[ingest] duplicate webhook delivery detected, skipping re-ingest:',
+      inbound.providerMessageId
+    )
+    return
+  }
+
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by
   // a reaction still fires the event, and a subscriber always sees the

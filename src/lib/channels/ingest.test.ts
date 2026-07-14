@@ -69,7 +69,12 @@ function makeFakeDb(
     eq: () => builder,
     in: () => builder,
     order: () => builder,
-    limit: () => Promise.resolve({ data: [], error: null }),
+    // Chainable AND directly awaitable: conversations' find-or-create
+    // path awaits `.limit(1)` directly, while the duplicate-webhook-
+    // delivery guard chains `.limit(1).maybeSingle()` on top of it.
+    limit: () => Object.assign(Promise.resolve({ data: [], error: null }), {
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    }),
     maybeSingle: () => Promise.resolve({ data: null, error: null }),
     single: () => {
       if (table === 'contacts' && mode === 'insert') {
@@ -122,6 +127,61 @@ describe('ingestInbound', () => {
     expect(dispatchInboundToAiReply).toHaveBeenCalledWith(
       expect.objectContaining({ triggeringProviderMessageId: 'wamid.trigger-1' }),
     );
+  });
+
+  describe('duplicate webhook delivery guard', () => {
+    it('skips re-ingestion entirely when a message with this id already exists in the conversation', async () => {
+      vi.mocked(dispatchInboundToFlows).mockClear();
+      vi.mocked(runAutomationsForTrigger).mockClear();
+      vi.mocked(dispatchInboundToAiReply).mockClear();
+      vi.mocked(findExistingContact).mockResolvedValueOnce({
+        id: 'contact-1', phone: '15551234567', name: 'Ana',
+      } as never);
+      const inserts: Record<string, unknown[]> = { messages: [] };
+      const db = {
+        from: (table: string) => {
+          if (table === 'conversations') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    order: () => ({ limit: () => Promise.resolve({ data: [{ id: 'conv-1', unread_count: 0 }], error: null }) }),
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'messages') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    limit: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'existing-msg-1' }, error: null }) }),
+                  }),
+                }),
+              }),
+              // Would only be reached if the guard failed to short-circuit.
+              insert: (row: Record<string, unknown>) => {
+                inserts.messages.push(row);
+                return { select: () => ({ single: () => Promise.resolve({ data: { id: 'new-msg' }, error: null }) }) };
+              },
+            };
+          }
+          throw new Error(`unexpected table in this test: ${table}`);
+        },
+      } as unknown as SupabaseClient;
+
+      await ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.retry-1',
+          timestamp: new Date(), kind: 'text', text: 'reenvio do provedor' },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+      );
+
+      expect(inserts.messages).toHaveLength(0);
+      expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+      expect(runAutomationsForTrigger).not.toHaveBeenCalled();
+      expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+    });
   });
 
   it('fires onContactCreated with the new contact row when a contact is actually created', async () => {
@@ -268,8 +328,19 @@ describe('ingestInbound', () => {
           if (table === 'messages') {
             return {
               select: () => ({
-                eq: () => ({
-                  eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'target-msg-1' }, error: null }) }),
+                // Two different queries land on this table: the new
+                // duplicate-webhook-delivery guard (`.eq('conversation_id',
+                // ...).eq('message_id', ...).limit(1).maybeSingle()`) runs
+                // first for every inbound, and lookupInternalIdByMetaId
+                // (`.eq('message_id', ...).eq('conversation_id',
+                // ...).maybeSingle()`, no `.limit()`) runs after, to resolve
+                // the reaction's target. Branch on which column is `.eq()`d
+                // first to tell them apart.
+                eq: (col1: string) => ({
+                  eq: () =>
+                    col1 === 'conversation_id'
+                      ? { limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }
+                      : { maybeSingle: () => Promise.resolve({ data: { id: 'target-msg-1' }, error: null }) },
                 }),
               }),
             };
