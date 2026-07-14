@@ -259,12 +259,16 @@ export async function sendMessageToConversation(
 
   // Resolve the reply target to its Meta message_id. The parent must
   // belong to this same conversation — otherwise a caller could quote
-  // messages they can't see by guessing UUIDs.
+  // messages they can't see by guessing UUIDs. sender_type is also
+  // resolved here (not used by Meta) — EvolutionProvider needs it to
+  // build the quoted message's Baileys key, same reason
+  // react/route.ts resolves it for reaction targets.
   let contextMessageId: string | undefined;
+  let contextFromMe: boolean | undefined;
   if (replyToMessageId) {
     const { data: parent, error: parentError } = await db
       .from('messages')
-      .select('message_id, conversation_id')
+      .select('message_id, conversation_id, sender_type')
       .eq('id', replyToMessageId)
       .eq('conversation_id', conversationId)
       .maybeSingle();
@@ -282,6 +286,7 @@ export async function sendMessageToConversation(
       );
     } else {
       contextMessageId = parent.message_id;
+      contextFromMe = parent.sender_type === 'agent';
     }
   }
 
@@ -402,6 +407,7 @@ export async function sendMessageToConversation(
           caption: contentText || undefined,
           filename: filename || undefined,
           contextProviderMessageId: contextMessageId,
+          contextFromMe,
         });
       } else if (messageType === 'interactive') {
         const p = interactivePayload!;
@@ -429,6 +435,7 @@ export async function sendMessageToConversation(
           to: sanitizedPhone,
           text: contentText!,
           contextProviderMessageId: contextMessageId,
+          contextFromMe,
         });
       }
       waMessageId = result.providerMessageId;

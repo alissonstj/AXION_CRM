@@ -4,7 +4,7 @@ import { EvolutionProvider } from './evolution';
 import {
   TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE, IMAGE_INBOUND_SAMPLE, AUDIO_INBOUND_SAMPLE,
   VIDEO_GROUP_SAMPLE, DOCUMENT_INBOUND_SAMPLE, LOCATION_INBOUND_SAMPLE, REACTION_INBOUND_SAMPLE,
-  BUTTON_REPLY_INBOUND_SAMPLE, CONNECTION_UPDATE_ERROR_SAMPLE,
+  BUTTON_REPLY_INBOUND_SAMPLE, CONNECTION_UPDATE_ERROR_SAMPLE, REPLY_INBOUND_SAMPLE,
 } from './__fixtures__/evolution-webhook-samples';
 
 const config = { baseUrl: 'http://evo.local', apiKey: 'instance-token', instanceName: 'axion-acc1' };
@@ -47,6 +47,45 @@ describe('EvolutionProvider.sender', () => {
     vi.spyOn(evolutionApi, 'sendEvolutionText').mockRejectedValue(new Error('boom'));
     const provider = new EvolutionProvider(config);
     await expect(provider.sender.sendText({ to: '5511999999999', text: 'x' })).rejects.toThrow('boom');
+  });
+
+  it('sendText builds the quoted key from to + contextProviderMessageId + contextFromMe', async () => {
+    const spy = vi.spyOn(evolutionApi, 'sendEvolutionText').mockResolvedValue({ messageId: 'ID4' });
+    const provider = new EvolutionProvider(config);
+    await provider.sender.sendText({
+      to: '5511999999999', text: 'resposta', contextProviderMessageId: 'PARENT-ID', contextFromMe: true,
+    });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+      quoted: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: true, id: 'PARENT-ID' },
+    }));
+  });
+
+  it('sendText omits quoted when there is no contextProviderMessageId', async () => {
+    const spy = vi.spyOn(evolutionApi, 'sendEvolutionText').mockResolvedValue({ messageId: 'ID5' });
+    const provider = new EvolutionProvider(config);
+    await provider.sender.sendText({ to: '5511999999999', text: 'oi' });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ quoted: undefined }));
+  });
+
+  it('sendText defaults contextFromMe to false when omitted but a context id is present', async () => {
+    const spy = vi.spyOn(evolutionApi, 'sendEvolutionText').mockResolvedValue({ messageId: 'ID6' });
+    const provider = new EvolutionProvider(config);
+    await provider.sender.sendText({ to: '5511999999999', text: 'x', contextProviderMessageId: 'PARENT-ID' });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+      quoted: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'PARENT-ID' },
+    }));
+  });
+
+  it('sendMedia also builds the quoted key', async () => {
+    const spy = vi.spyOn(evolutionApi, 'sendEvolutionMedia').mockResolvedValue({ messageId: 'ID7' });
+    const provider = new EvolutionProvider(config);
+    await provider.sender.sendMedia({
+      to: '5511999999999', kind: 'image', link: 'https://x/a.jpg',
+      contextProviderMessageId: 'PARENT-ID', contextFromMe: false,
+    });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+      quoted: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'PARENT-ID' },
+    }));
   });
 
   // sendReaction's HTTP call is local to evolution.ts (not exported from
@@ -193,8 +232,17 @@ describe('EvolutionProvider.parseWebhook', () => {
       from: '5511900000002', contactName: 'Test Customer',
       providerMessageId: 'ANON0000000000000000000000000001',
       kind: 'text', text: 'Oiiiii teste',
+      replyToProviderMessageId: null,
     });
     expect(inbound.timestamp).toEqual(new Date(1783887066 * 1000));
+  });
+
+  it('maps replyToProviderMessageId from contextInfo.stanzaId (sibling of message, not nested)', () => {
+    const [inbound] = provider.parseWebhook(REPLY_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      kind: 'text', text: 'claro, aqui esta a resposta',
+      replyToProviderMessageId: 'ANON0000000000000000000000000001',
+    });
   });
 
   it('drops fromMe echoes entirely', () => {

@@ -18,6 +18,15 @@ export interface SendTextArgs {
   to: string;
   text: string;
   contextProviderMessageId?: string;
+  /** A mensagem citada (`contextProviderMessageId`) foi originalmente
+   *  enviada por nós (agente) ou pelo contato? Mesma necessidade que
+   *  `SendReactionArgs.targetFromMe` — a Evolution/Baileys precisa
+   *  disso pra montar a chave completa da mensagem citada; a Meta
+   *  ignora. Só consumido por `EvolutionProvider.sender.sendText`/
+   *  `sendMedia` — `sendInteractiveButtons`/`sendInteractiveList` ainda
+   *  não encaminham `contextProviderMessageId` nenhum na Evolution
+   *  (gap pré-existente, fora de escopo aqui). */
+  contextFromMe?: boolean;
 }
 
 export type OutboundMediaKind = 'image' | 'video' | 'document' | 'audio';
@@ -30,6 +39,8 @@ export interface SendMediaArgs {
   caption?: string;
   filename?: string;
   contextProviderMessageId?: string;
+  /** Ver nota em `SendTextArgs.contextFromMe`. */
+  contextFromMe?: boolean;
 }
 
 export interface OutboundButton {

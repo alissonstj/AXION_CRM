@@ -6,6 +6,7 @@ import {
   logoutEvolutionInstance,
   deleteEvolutionInstance,
   type EvolutionMediaType,
+  type EvolutionQuotedRef,
 } from '@/lib/whatsapp/evolution-api';
 import type {
   ChannelProvider,
@@ -46,6 +47,18 @@ const MEDIA_KIND_TO_EVOLUTION: Record<SendMediaArgs['kind'], EvolutionMediaType>
   image: 'image', video: 'video', document: 'document', audio: 'audio',
 };
 
+/** Builds the quoted-message key sendEvolutionText/sendEvolutionMedia
+ *  expect, from the args every ChannelSender caller already provides
+ *  (contextProviderMessageId + the new contextFromMe). `to` doubles as
+ *  the chat's remoteJid — correct for a 1:1 chat, which is the only
+ *  case this provider handles (groups are out of scope, see
+ *  parseWebhook). Returns undefined when there's no reply target, so
+ *  callers can pass it straight through without an extra branch. */
+function buildQuotedRef(to: string, contextProviderMessageId?: string, contextFromMe?: boolean): EvolutionQuotedRef | undefined {
+  if (!contextProviderMessageId) return undefined;
+  return { remoteJid: `${to}@s.whatsapp.net`, fromMe: contextFromMe ?? false, id: contextProviderMessageId };
+}
+
 export class EvolutionProvider implements ChannelProvider {
   readonly id: ChannelProviderId = 'evolution';
   readonly sender: ChannelSender;
@@ -56,6 +69,7 @@ export class EvolutionProvider implements ChannelProvider {
       sendText: async (args: SendTextArgs): Promise<OutboundResult> => {
         const { messageId } = await sendEvolutionText({
           baseUrl, apiKey, instanceName, to: args.to, text: args.text,
+          quoted: buildQuotedRef(args.to, args.contextProviderMessageId, args.contextFromMe),
         });
         return { providerMessageId: messageId };
       },
@@ -64,6 +78,7 @@ export class EvolutionProvider implements ChannelProvider {
           baseUrl, apiKey, instanceName, to: args.to,
           mediatype: MEDIA_KIND_TO_EVOLUTION[args.kind],
           media: args.link, caption: args.caption, fileName: args.filename,
+          quoted: buildQuotedRef(args.to, args.contextProviderMessageId, args.contextFromMe),
         });
         return { providerMessageId: messageId };
       },
@@ -206,6 +221,13 @@ interface EvolutionUpsertData {
   message: EvolutionMessageContent;
   messageType: string;
   messageTimestamp: number;
+  /** Sibling of `message`, not nested inside it — confirmed against
+   *  real historical data in Evolution's own Postgres store (its
+   *  `Message` table has `contextInfo` as its own top-level jsonb
+   *  column, separate from `message`), and matches the shape of a
+   *  quoted reply's own send-response captured live 2026-07-14.
+   *  `stanzaId` is the quoted message's WhatsApp id. */
+  contextInfo?: { stanzaId?: string };
 }
 
 interface EvolutionWebhookBody {
@@ -231,6 +253,7 @@ function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | nul
     contactName: data.pushName,
     providerMessageId: data.key.id,
     timestamp: new Date(data.messageTimestamp * 1000),
+    replyToProviderMessageId: data.contextInfo?.stanzaId ?? null,
   };
   const m = data.message;
 

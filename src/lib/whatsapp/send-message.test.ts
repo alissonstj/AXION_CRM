@@ -179,7 +179,7 @@ describe('sendMessageToConversation — Evolution provider (full DB path)', () =
   // 'split')" instead of sending. This pins the fix: a non-template
   // send must reach the provider and succeed without touching
   // access_token at all.
-  function makeEvolutionDb(): SupabaseClient {
+  function makeEvolutionDb(parentMessageRow: Record<string, unknown> | null = null): SupabaseClient {
     const conversation = {
       id: 'cv-1',
       contact: { id: 'contact-1', phone: '+14155550123' },
@@ -200,7 +200,14 @@ describe('sendMessageToConversation — Evolution provider (full DB path)', () =
         if (lastTable === 'messages') return { data: { id: 'msg-1' }, error: null };
         return { data: null, error: null };
       },
-      maybeSingle: async () => ({ data: null, error: null }),
+      // The reply-target lookup (replyToMessageId) uses maybeSingle on
+      // 'messages' — distinct from the post-send insert result above,
+      // which uses .single(). Parametrized so reply tests can supply a
+      // parent row with sender_type.
+      maybeSingle: async () => {
+        if (lastTable === 'messages') return { data: parentMessageRow, error: null };
+        return { data: null, error: null };
+      },
       insert: () => chain,
       update: () => chain,
     };
@@ -217,6 +224,34 @@ describe('sendMessageToConversation — Evolution provider (full DB path)', () =
     expect(result).toEqual({ messageId: 'msg-1', whatsappMessageId: 'evo-msg-1' });
     expect(mockSendText).toHaveBeenCalledWith(
       expect.objectContaining({ to: '14155550123', text: 'hey there' })
+    );
+  });
+
+  it('resolves contextFromMe=true from the parent message sender_type=agent and forwards it', async () => {
+    mockSendText.mockReset().mockResolvedValue({ providerMessageId: 'evo-msg-2' });
+    const db = makeEvolutionDb({ message_id: 'PARENT-WAMID', conversation_id: 'cv-1', sender_type: 'agent' });
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'reply text',
+      replyToMessageId: 'parent-uuid',
+    });
+    expect(mockSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ contextProviderMessageId: 'PARENT-WAMID', contextFromMe: true }),
+    );
+  });
+
+  it('resolves contextFromMe=false from the parent message sender_type=customer', async () => {
+    mockSendText.mockReset().mockResolvedValue({ providerMessageId: 'evo-msg-3' });
+    const db = makeEvolutionDb({ message_id: 'PARENT-WAMID', conversation_id: 'cv-1', sender_type: 'customer' });
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'reply text',
+      replyToMessageId: 'parent-uuid',
+    });
+    expect(mockSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ contextProviderMessageId: 'PARENT-WAMID', contextFromMe: false }),
     );
   });
 

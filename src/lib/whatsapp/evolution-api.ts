@@ -133,10 +133,26 @@ export async function deleteEvolutionInstance(args: EvolutionInstanceArgs): Prom
 // Sending
 // ============================================================
 
+/** The message being quoted, keyed the same way Baileys identifies any
+ *  message (matches `sendReaction`'s target key). Confirmed live
+ *  2026-07-14: sending `{ quoted: { key: {...} } }` produced a real
+ *  quoted reply, and the resulting message's `contextInfo.stanzaId`/
+ *  `quotedMessage` correctly resolved the parent — even tested with a
+ *  deliberately wrong `fromMe` and it still resolved (self-chat may be
+ *  lenient here since remoteJid was identical either way; kept correct
+ *  regardless since Baileys message ids are only unique per
+ *  (remoteJid, fromMe), not globally). */
+export interface EvolutionQuotedRef {
+  remoteJid: string;
+  fromMe: boolean;
+  id: string;
+}
+
 export interface SendEvolutionTextArgs extends EvolutionAuth {
   instanceName: string;
   to: string;
   text: string;
+  quoted?: EvolutionQuotedRef;
 }
 export interface EvolutionSendResult {
   messageId: string;
@@ -146,11 +162,13 @@ export interface EvolutionSendResult {
  *  `{textMessage:{text}}` shape the doc site (incorrectly) describes;
  *  confirmed against the upstream DTO (SendTextDto extends Metadata). */
 export async function sendEvolutionText(args: SendEvolutionTextArgs): Promise<EvolutionSendResult> {
-  const { baseUrl, apiKey, instanceName, to, text } = args;
+  const { baseUrl, apiKey, instanceName, to, text, quoted } = args;
+  const body: Record<string, unknown> = { number: to, text };
+  if (quoted) body.quoted = { key: quoted };
   const response = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
     method: 'POST',
     headers: headers(apiKey),
-    body: JSON.stringify({ number: to, text }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
   const data = await response.json();
@@ -168,14 +186,19 @@ export interface SendEvolutionMediaArgs extends EvolutionAuth {
   media: string;
   caption?: string;
   fileName?: string;
+  /** Same shape as sendText's — not independently live-verified for
+   *  sendMedia specifically, inferred by symmetry (same DTO family,
+   *  same `quoted`/`key` convention observed live on sendText). */
+  quoted?: EvolutionQuotedRef;
 }
 
 /** POST /message/sendMedia/{instance}. */
 export async function sendEvolutionMedia(args: SendEvolutionMediaArgs): Promise<EvolutionSendResult> {
-  const { baseUrl, apiKey, instanceName, to, mediatype, media, caption, fileName } = args;
+  const { baseUrl, apiKey, instanceName, to, mediatype, media, caption, fileName, quoted } = args;
   const body: Record<string, unknown> = { number: to, mediatype, media };
   if (caption) body.caption = caption;
   if (fileName) body.fileName = fileName;
+  if (quoted) body.quoted = { key: quoted };
   const response = await fetch(`${baseUrl}/message/sendMedia/${instanceName}`, {
     method: 'POST',
     headers: headers(apiKey),
