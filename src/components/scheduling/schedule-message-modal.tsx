@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Loader2, MessageSquare, Paperclip } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 import {
   Dialog,
@@ -40,13 +41,6 @@ const CONTENT_TYPE_ACCEPT: Record<Exclude<ScheduledContentType, "text">, string>
   audio: "audio/mpeg,audio/ogg,audio/mp4,audio/wav",
 };
 
-const CONTENT_TYPE_LABEL: Record<Exclude<ScheduledContentType, "text">, string> = {
-  image: "imagem",
-  video: "vídeo",
-  document: "documento",
-  audio: "áudio",
-};
-
 interface MediaDraft {
   url: string;
   path: string;
@@ -79,6 +73,7 @@ export function ScheduleMessageModal({
   conversationId,
   onScheduled,
 }: ScheduleMessageModalProps) {
+  const t = useTranslations("Scheduling.modal");
   const [title, setTitle] = useState("");
   const [contentType, setContentType] = useState<ScheduledContentType>("text");
   const [text, setText] = useState("");
@@ -117,22 +112,33 @@ export function ScheduleMessageModal({
   const handlePickQuickReply = useCallback((qr: QuickReply) => {
     setQuickReplyOpen(false);
     if (qr.kind !== "text" || !qr.content_text) {
-      toast.error("Só é possível usar respostas rápidas de texto aqui.");
+      toast.error(t("onlyTextQuickReplies"));
       return;
     }
     setContentType("text");
     setText(qr.content_text);
-  }, []);
+  }, [t]);
+
+  const contentTypeOptions: { value: ScheduledContentType; label: string }[] = useMemo(() => [
+    { value: "text", label: t("contentText") },
+    { value: "image", label: t("contentImage") },
+    { value: "video", label: t("contentVideo") },
+    { value: "document", label: t("contentDocument") },
+    { value: "audio", label: t("contentAudio") },
+  ], [t]);
 
   const handleFileSelect = useCallback(
     async (kind: Exclude<ScheduledContentType, "text">, file: File | undefined) => {
       if (!file) return;
       const max = MEDIA_MAX_BYTES_BY_KIND[kind];
       if (file.size > max) {
+        const kindLabel = contentTypeOptions.find((o) => o.value === kind)?.label.toLowerCase() ?? kind;
         toast.error(
-          `O arquivo tem ${(file.size / 1024 / 1024).toFixed(1)} MB — o limite para ${CONTENT_TYPE_LABEL[kind]} é ${Math.round(
-            max / 1024 / 1024,
-          )} MB.`,
+          t("fileSizeError", {
+            size: (file.size / 1024 / 1024).toFixed(1),
+            kind: kindLabel,
+            max: Math.round(max / 1024 / 1024),
+          }),
         );
         return;
       }
@@ -141,12 +147,12 @@ export function ScheduleMessageModal({
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
         setMediaDraft({ url: publicUrl, path, filename: file.name });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Falha no upload.");
+        toast.error(err instanceof Error ? err.message : t("uploadFailed"));
       } finally {
         setUploading(false);
       }
     },
-    [],
+    [contentTypeOptions, t],
   );
 
   const handleContentTypeChange = useCallback((next: ScheduledContentType) => {
@@ -165,7 +171,7 @@ export function ScheduleMessageModal({
 
     const scheduledDate = new Date(scheduledAt);
     if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.getTime() <= Date.now()) {
-      toast.error("Escolha uma data e hora no futuro.");
+      toast.error(t("pickFutureDateTime"));
       return;
     }
 
@@ -186,48 +192,40 @@ export function ScheduleMessageModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error ?? "Não foi possível agendar a mensagem.");
+        toast.error(data.error ?? t("scheduleFailed"));
         return;
       }
-      toast.success("Mensagem agendada.");
+      toast.success(t("scheduleSuccess"));
       reset();
       onOpenChange(false);
       onScheduled?.();
     } catch {
-      toast.error("Não foi possível conectar ao servidor.");
+      toast.error(t("serverUnreachable"));
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, scheduledAt, dealId, conversationId, title, contentType, text, mediaDraft, reset, onOpenChange, onScheduled]);
-
-  const contentTypeOptions: { value: ScheduledContentType; label: string }[] = [
-    { value: "text", label: "Texto" },
-    { value: "image", label: "Imagem" },
-    { value: "video", label: "Vídeo" },
-    { value: "document", label: "Documento" },
-    { value: "audio", label: "Áudio" },
-  ];
+  }, [canSubmit, scheduledAt, dealId, conversationId, title, contentType, text, mediaDraft, reset, onOpenChange, onScheduled, t]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Agendar mensagem</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="schedule-title">Título (opcional)</Label>
+            <Label htmlFor="schedule-title">{t("titleLabel")}</Label>
             <Input
               id="schedule-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="ex: follow-up de 20 dias"
+              placeholder={t("titlePlaceholder")}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Conteúdo</Label>
+            <Label>{t("content")}</Label>
             <div className="flex flex-wrap gap-1.5">
               {contentTypeOptions.map((opt) => (
                 <Button
@@ -246,11 +244,11 @@ export function ScheduleMessageModal({
           {contentType === "text" ? (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="schedule-text">Mensagem</Label>
+                <Label htmlFor="schedule-text">{t("message")}</Label>
                 <div className="flex items-center gap-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger className="flex h-7 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
-                      Inserir variável
+                      {t("insertVariable")}
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => insertVariable("#primeiroNome")}>
@@ -269,7 +267,7 @@ export function ScheduleMessageModal({
                     onClick={() => setQuickReplyOpen(true)}
                   >
                     <MessageSquare className="mr-1 h-3.5 w-3.5" />
-                    Resposta rápida
+                    {t("quickReply")}
                   </Button>
                 </div>
               </div>
@@ -278,7 +276,7 @@ export function ScheduleMessageModal({
                 ref={textareaRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Oi #primeiroNome, tudo bem?"
+                placeholder={t("textPlaceholder")}
                 className="min-h-24"
               />
             </div>
@@ -305,19 +303,19 @@ export function ScheduleMessageModal({
                 ) : (
                   <Paperclip className="mr-2 h-4 w-4" />
                 )}
-                {mediaDraft ? mediaDraft.filename : "Escolher arquivo"}
+                {mediaDraft ? mediaDraft.filename : t("chooseFile")}
               </Button>
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Legenda (opcional)"
+                placeholder={t("captionPlaceholder")}
                 className="min-h-16"
               />
             </div>
           )}
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="schedule-datetime">Data e hora</Label>
+            <Label htmlFor="schedule-datetime">{t("dateTime")}</Label>
             <Input
               id="schedule-datetime"
               type="datetime-local"
@@ -330,11 +328,11 @@ export function ScheduleMessageModal({
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancelar
+            {t("cancel")}
           </Button>
           <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Agendar
+            {t("submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

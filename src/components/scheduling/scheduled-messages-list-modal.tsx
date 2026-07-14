@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 import {
   Dialog,
@@ -27,15 +28,6 @@ function formatScheduledAt(iso: string): string {
   });
 }
 
-const CONTENT_TYPE_LABEL: Record<string, string> = {
-  text: "texto", image: "imagem", video: "vídeo", document: "documento", audio: "áudio",
-};
-
-function previewText(item: ScheduledMessage): string {
-  if (item.content_text) return item.content_text;
-  return `[${CONTENT_TYPE_LABEL[item.content_type] ?? item.content_type}]`;
-}
-
 export interface ScheduledMessagesListModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,9 +45,28 @@ export function ScheduledMessagesListModal({
   onOpenChange,
   conversationId,
 }: ScheduledMessagesListModalProps) {
+  // Parent namespace, not just "Scheduling.list" — the content-type
+  // preview label below reuses ScheduleMessageModal's "modal.content*"
+  // keys rather than duplicating the same four words under a second key.
+  const t = useTranslations("Scheduling");
   const [items, setItems] = useState<ScheduledMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const contentTypeLabel = useCallback((type: string): string => {
+    switch (type) {
+      case "image": return t("modal.contentImage");
+      case "video": return t("modal.contentVideo");
+      case "document": return t("modal.contentDocument");
+      case "audio": return t("modal.contentAudio");
+      default: return t("modal.contentText");
+    }
+  }, [t]);
+
+  const previewText = useCallback((item: ScheduledMessage): string => {
+    if (item.content_text) return item.content_text;
+    return `[${contentTypeLabel(item.content_type)}]`;
+  }, [contentTypeLabel]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,23 +92,23 @@ export function ScheduledMessagesListModal({
       const res = await fetch(`/api/scheduled-messages/${id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error ?? "Não foi possível cancelar o agendamento.");
+        toast.error(data.error ?? t("list.cancelFailed"));
         return;
       }
       setItems((prev) => prev.filter((i) => i.id !== id));
-      toast.success("Agendamento cancelado.");
+      toast.success(t("list.cancelSuccess"));
     } catch {
-      toast.error("Não foi possível conectar ao servidor.");
+      toast.error(t("list.serverUnreachable"));
     } finally {
       setCancellingId(null);
     }
-  }, []);
+  }, [t]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Mensagens agendadas</DialogTitle>
+          <DialogTitle>{t("list.title")}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto">
           {loading ? (
@@ -106,7 +117,7 @@ export function ScheduledMessagesListModal({
             </div>
           ) : items.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Nada agendado para esta conversa ainda.
+              {t("list.empty")}
             </p>
           ) : (
             <ul className="flex flex-col gap-1">
@@ -133,7 +144,7 @@ export function ScheduledMessagesListModal({
                     variant="ghost"
                     size="sm"
                     className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-red-400"
-                    title="Cancelar"
+                    title={t("list.cancelTooltip")}
                     onClick={() => void handleCancel(item.id)}
                     disabled={cancellingId === item.id}
                   >

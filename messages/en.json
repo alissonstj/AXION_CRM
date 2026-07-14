@@ -14,8 +14,80 @@
     "noAccount": "Don't have an account?",
     "createAccount": "Create account"
   },
+  "SignupPage": {
+    "titleJoin": "Create account & join",
+    "titleCreate": "Create account",
+    "descJoin": "Verify your email, then accept the invitation to join your team.",
+    "descCreate": "Get started with AXION CRM PRO",
+    "fullNameLabel": "Full name",
+    "fullNamePlaceholder": "John Doe",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "At least 6 characters",
+    "confirmPasswordLabel": "Confirm password",
+    "confirmPasswordPlaceholder": "Repeat your password",
+    "creatingAccount": "Creating account...",
+    "createAccount": "Create account",
+    "alreadyHaveAccount": "Already have an account?",
+    "signIn": "Sign in",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "successTitle": "Check your email",
+    "successDescription": "We've sent a confirmation link to <email>{emailAddress}</email>. Please check your inbox and click the link to verify your account.",
+    "backToSignIn": "Back to sign in"
+  },
+  "ForgotPasswordPage": {
+    "successTitle": "Check your email",
+    "successDescription": "We've sent a password reset link to <email>{emailAddress}</email>. Please check your inbox.",
+    "backToSignIn": "Back to sign in",
+    "title": "Reset password",
+    "description": "Enter your email and we'll send you a reset link",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "sending": "Sending...",
+    "sendResetLink": "Send reset link"
+  },
+  "JoinPage": {
+    "roleAdmin": "Admin",
+    "roleAgent": "Agent",
+    "roleViewer": "Viewer",
+    "failNotFoundTitle": "Invite not found",
+    "failNotFoundBody": "This link doesn't match a valid invitation. Double-check the URL or ask the person who invited you to send a new one.",
+    "failUsedTitle": "Invite already used",
+    "failUsedBody": "This invitation has already been accepted. If that wasn't you, ask the account admin to send a fresh link.",
+    "failExpiredTitle": "Invite expired",
+    "failExpiredBody": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate.",
+    "failServerErrorTitle": "Something went wrong",
+    "failServerErrorBody": "We couldn't verify this invitation right now. Try refreshing the page in a moment.",
+    "verifying": "Verifying invitation…",
+    "tryAgain": "Try again",
+    "createNewAccountInstead": "Create a new account instead",
+    "signIn": "Sign in",
+    "invitedTo": "You're invited to <account>{accountName}</account>",
+    "willJoinAs": "You'll join as <role>{roleLabel}</role>. Link valid until {expiresAt}.",
+    "accepting": "Accepting…",
+    "acceptInvitation": "Accept invitation",
+    "acceptingMovesLogin": "Accepting moves your login into <account>{accountName}</account>. Your empty personal account from signup will be cleaned up.",
+    "conflictDialogTitle": "Can't join {accountName} with this account",
+    "conflictBodyJoin": "To join <account>{accountName}</account>, sign out and sign up again with a different email address. The invite link stays valid as long as it hasn't expired.",
+    "staySignedIn": "Stay signed in",
+    "signOutAndUseDifferentEmail": "Sign out & use a different email",
+    "signingOut": "Signing out…",
+    "createAccountAndJoin": "Create account & join",
+    "alreadyHaveAccount": "I already have an account",
+    "toastWelcome": "Welcome to the team",
+    "toastFailedAccept": "Failed to accept invitation",
+    "toastCouldNotReachServer": "Could not reach the server",
+    "toastCouldNotSignOut": "Could not sign out. Try refreshing the page.",
+    "conflictDefaultMessage": "You are already in another account. Sign in with a different email to join this one."
+  },
+  "DashboardShell": {
+    "loading": "Loading..."
+  },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "AXION CRM PRO",
+    "primaryNavAria": "Primary",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -125,6 +197,17 @@
       "title": "Not enough data yet"
     }
   },
+  "Notifications": {
+    "title": "Notifications",
+    "description": "Conversations other teammates assign to you show up here.",
+    "markAllAsRead": "Mark all as read",
+    "retry": "Retry",
+    "noNotifications": "No notifications yet",
+    "noNotificationsHint": "You'll see an alert here when someone assigns you a conversation.",
+    "unread": "Unread",
+    "markReadFailed": "Failed to mark notification as read",
+    "markAllReadFailed": "Failed to mark all as read"
+  },
   "Inbox": {
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
@@ -166,7 +249,13 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "sendFailed": "Failed to send: {reason}",
+      "sendTemplateFailed": "Failed to send template: {reason}",
+      "networkError": "network error",
+      "waitForSend": "Wait for the message to finish sending",
+      "reactionFailed": "Reaction failed: {reason}",
+      "assignUpdateFailed": "Failed to update assignment"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -198,13 +287,22 @@
       "interactiveMessage": "Interactive message",
       "quickReplies": "Quick replies",
       "quickRepliesEmpty": "No quick replies yet. Add some in Settings → Quick replies.",
-      "scheduleMessage": "Agendar mensagem",
-      "scheduledMessages": "Mensagens agendadas",
+      "scheduleMessage": "Schedule message",
+      "scheduledMessages": "Scheduled messages",
       "saveAsQuickReply": "Save as quick reply",
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "aiNotConfigured": "AI isn't set up yet — enable it in Settings → AI Assistant.",
+      "draftFailed": "Couldn't draft a reply.",
+      "draftEmpty": "The assistant didn't return a reply.",
+      "draftNetworkError": "Couldn't reach the AI assistant.",
+      "fileTooLarge": "File is {size} MB — {kind, select, image {image} video {video} document {document} audio {audio} other {file}} limit is {max} MB.",
+      "uploadFailed": "Upload failed.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "recordingUnsupported": "Voice recording isn't supported in this browser.",
+      "micDenied": "Microphone access denied or unavailable."
     },
     "bubble": {
       "photo": "Photo",
@@ -288,6 +386,7 @@
       "filterByTags": "Filter by tags",
       "clearAll": "Clear all",
       "noTagsYet": "No tags yet.",
+      "selectAllAria": "Select all contacts on this page",
       "selectedCount": "{count} selected",
       "clearSelection": "Clear",
       "deleteSelected": "Delete selected",
@@ -360,9 +459,9 @@
         "notes": "Notes",
         "custom": "Custom Fields",
         "deals": "Deals",
-      "noTags": "No tags",
-      "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+        "noTags": "No tags",
+        "noDeals": "No deals",
+        "addNotePlaceholder": "Add a note..."
       },
       "actions": {
         "edit": "Edit",
@@ -411,7 +510,8 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "networkError": "network error"
     },
     "importModal": {
       "title": "Import Contacts",
@@ -505,7 +605,7 @@
       "noContact": "No contact",
       "won": "Won",
       "lost": "Lost",
-      "scheduleMessage": "Agendar mensagem"
+      "scheduleMessage": "Schedule message"
     },
     "form": {
       "editDeal": "Edit Deal",
@@ -606,7 +706,8 @@
         "date": "Date"
       },
       "errorLoad": "Failed to load broadcasts",
-      "retry": "Retry"
+      "retry": "Retry",
+      "broadcastInProgressAria": "Broadcast in progress"
     },
     "status": {
       "draft": "Draft",
@@ -745,6 +846,7 @@
         "typeContact": "Contact Field",
         "typeCustom": "Custom Field",
         "staticValue": "Static Value",
+        "valuePlaceholder": "Enter value...",
         "contactField": "Contact Field",
         "selectContactField": "Select field...",
         "customField": "Custom Field",
@@ -792,6 +894,24 @@
       "create": "Create Automation",
       "retry": "Retry",
       "templatesTitle": "Quick-start templates",
+      "templates": {
+        "welcome_message": {
+          "name": "Welcome Message",
+          "description": "Auto-reply to first-time contacts with a greeting."
+        },
+        "out_of_office": {
+          "name": "Out of Office",
+          "description": "Auto-reply during off-hours so nobody is left waiting."
+        },
+        "lead_qualifier": {
+          "name": "Lead Qualifier",
+          "description": "Ask qualification questions to filter inbound leads."
+        },
+        "follow_up_reminder": {
+          "name": "Follow-up Reminder",
+          "description": "Send a nudge if a contact has not replied within 24 hours."
+        }
+      },
       "emptyTitle": "No automations yet",
       "emptyDesc": "Pick a template above or create one from scratch.",
       "runs": "{count} run",
@@ -802,6 +922,7 @@
       "edit": "Edit",
       "duplicate": "Duplicate",
       "viewLogs": "View Logs",
+      "openMenu": "Open menu",
       "delete": "Delete",
       "cancel": "Cancel",
       "deleteTitle": "Delete automation",
@@ -896,9 +1017,10 @@
       "replyIdsHint": "yes, no, more_info",
       "replyIdsHelp": "Comma-separated button/list-row ids to match, exact. Use the same ids you set on a Send Buttons / Send List step.",
       "schedule": "Schedule",
+      "schedulePlaceholder": "Cron expression or HH:mm",
       "scheduleHint": "Cron expression (e.g. 0 9 * * 1-5)",
-      "inactivityDays": "Dias de inatividade",
-      "inactivityDaysHint": "Dispara uma vez para cada contato sem mensagem dele há esse número de dias",
+      "inactivityDays": "Inactivity days",
+      "inactivityDaysHint": "Fires once for each contact who hasn't messaged in this many days",
       "active": "Active",
       "activeAria": "Active",
       "save": "Save",
@@ -951,6 +1073,8 @@
         "no": "No"
       },
       "addStep": "Add step",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
       "config": {
         "messageText": "Message text",
         "placeholderMessageText": "Hi! Thanks for reaching out…",
@@ -1034,6 +1158,21 @@
       "backToFlows": "← Back to flows",
       "loadError": "Couldn't load flow."
     },
+    "header": {
+      "backToFlows": "Back to Flows",
+      "flowNamePlaceholder": "Flow name",
+      "flowNameAria": "Flow name",
+      "unsavedChangesTitle": "Unsaved changes — hit Save to persist",
+      "edited": "Edited",
+      "runs": "Runs",
+      "delete": "Delete",
+      "pause": "Pause",
+      "activate": "Activate",
+      "fixIssuesBeforeActivating": "Fix the issues below before activating",
+      "save": "Save",
+      "descriptionPlaceholder": "Add a short description (internal — customers don't see this)",
+      "descriptionAria": "Flow description"
+    },
     "logs": {
       "title": "Runs",
       "description": "The 50 most recent times this flow ran. Expand a row to see the engine's per-step log.",
@@ -1077,6 +1216,7 @@
       "deleteNode": "Delete node",
       "canvasView": "Canvas",
       "listView": "List",
+      "editorViewAria": "Editor view",
       "noNodeSelected": "No node selected",
       "noNodeDesc": "Select a node on the canvas to edit its configuration.",
       "form": {
@@ -1131,6 +1271,10 @@
         "removeFile": "Remove file",
         "uploading": "Uploading…",
         "clickToUpload": "Click to upload (max 16 MB)",
+        "fileTooLarge": "File is {size} MB — limit is 16 MB.",
+        "fileUploaded": "File uploaded.",
+        "uploadFailed": "Upload failed.",
+        "removeSectionAria": "Remove section",
         "captionLabel": "Caption (optional, shown under the media)",
         "filenameLabel": "Filename shown to the customer (documents only)",
         "filenamePlaceholder": "invoice.pdf",
@@ -1196,7 +1340,11 @@
       "fixIssues": "Fix the issues below before activating.",
       "statusActivated": "Flow activated.",
       "statusArchived": "Archived.",
-      "statusDraft": "Saved as draft."
+      "statusDraft": "Saved as draft.",
+      "saveFailed": "Save failed",
+      "statusUpdateFailed": "Status update failed",
+      "deleteFailed": "Delete failed",
+      "deleteConfirm": "Delete \"{name}\"? Any active runs end immediately. This can't be undone."
     },
     "summary": {
       "options": "{count} {count, plural, =1 {option} other {options}}",
@@ -1220,6 +1368,7 @@
   "Settings": {
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
+    "sectionsNavAria": "Settings sections",
     "overview": {
       "notSetup": "Not set up yet",
       "connected": "Connected",
@@ -1294,7 +1443,7 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}"
+      "whatsappMessage": "Join {accountName} on AXION CRM PRO using this link (valid for {expiresInDays} days): {url}"
     },
     "tagsAndFields": {
       "title": "Fields & tags",
@@ -1350,13 +1499,11 @@
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
       "deleteLocallyTitle": "Delete locally",
-      
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
-      
       "templateName": "Template Name",
       "namePlaceholder": "e.g. order_confirmation",
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
@@ -1365,7 +1512,6 @@
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
-      
       "header": "Header",
       "headerNone": "None",
       "headerText": "Text",
@@ -1375,7 +1521,6 @@
       "headerTextPlaceholder": "Header text (max 60 chars, optional {{1}})",
       "headerSampleAria": "Sample value for header variable",
       "headerSamplePlaceholder": "Sample value for {{1}} (required for Meta review)",
-      
       "uploadImage": "Upload image",
       "uploadHint": "JPEG or PNG, ≤5 MB",
       "mediaUrlPlaceholder": "https://… (or paste a public {format} link)",
@@ -1383,17 +1528,14 @@
       "mediaHint": "Must be a publicly accessible HTTPS link. Meta fetches it once during review, so it needs to stay live for ~24 hrs.",
       "videoHint": " Recommended: MP4 / 3GPP, ≤16 MB, ≤60 seconds.",
       "documentHint": " Recommended: PDF, ≤100 MB.",
-      
       "bodyText": "Body Text",
       "bodyPlaceholder": "Hello {{1}}, your order {{2}} is confirmed.",
       "bodyHint": "Use {{1}}, {{2}} for variables (must be contiguous starting at {{1}}).",
       "sampleValues": "Sample values (Meta uses these to review your template)",
       "sampleAria": "Sample value for body variable {var}",
       "samplePlaceholder": "Sample for {var}",
-      
       "footer": "Footer (optional)",
       "footerPlaceholder": "Optional footer text (max 60 chars)",
-      
       "buttons": "Buttons (optional)",
       "addButton": "Add Button",
       "buttonsLimit": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
@@ -1406,19 +1548,16 @@
       "urlSamplePlaceholder": "Example value for {{1}} (required when URL has a variable)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "Example code (e.g. SUMMER20)",
-      
       "cancel": "Cancel",
       "saving": "Saving…",
       "submitting": "Submitting…",
       "saveResubmit": "Save & Resubmit",
       "submitApproval": "Submit for Approval",
-      
       "deleteDialogTitle": "Delete template?",
-      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
-      "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
+      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from AXION CRM PRO. Active broadcasts using this template will start failing on their next send. This can't be undone.",
+      "deleteLocalDesc": "\"{name}\" will be deleted from AXION CRM PRO. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
-      
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
@@ -1457,7 +1596,7 @@
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
       "notConnectedDesc": "Configure your Meta API credentials below to connect your WhatsApp Business account.",
-      "registered": "Registered — Meta will deliver events to wacrm",
+      "registered": "Registered — Meta will deliver events to AXION CRM PRO",
       "notRegistered": "Not registered — Meta will not deliver events",
       "verifyWithMeta": "Verify with Meta",
       "subscribedSince": "Subscribed since {date}. Click Verify with Meta if events stop arriving.",
@@ -1481,7 +1620,7 @@
       "twoStepPin": "Two-step verification PIN",
       "optional": "(optional)",
       "pinPlaceholder": "6-digit PIN from Meta WhatsApp Manager",
-      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so wacrm can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
+      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so AXION CRM PRO can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
@@ -1538,6 +1677,7 @@
       "appearance": "Appearance",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
+      "quick-replies": "Quick replies",
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",
@@ -1575,7 +1715,6 @@
       "profileSaved": "Profile saved",
       "emailChangeFailed": "Email change failed: {message}",
       "profileSavedEmailCheck": "Profile saved — check your email to confirm the address change",
-      
       "passwordTitle": "Password",
       "passwordDesc": "Use at least {min} characters. You will stay signed in on this device after changing it.",
       "currentPassword": "Current password",
@@ -1589,7 +1728,6 @@
       "currentPasswordIncorrect": "Current password is incorrect",
       "passwordUpdateFailed": "Password update failed: {message}",
       "passwordUpdated": "Password updated",
-      
       "sessionsTitle": "Active sessions",
       "sessionsDesc": "Sign out of every device where you're logged in — including this one. Useful if you lost a laptop or shared your password.",
       "signOutAll": "Sign out of all devices",
@@ -1604,10 +1742,37 @@
       "title": "Appearance",
       "description": "Set the mode and accent colour used across the app. Saved to this device — try it, it changes live.",
       "mode": "Mode",
+      "modeGroupLabel": "Color mode",
       "useMode": "Use {mode} mode",
       "active": "Active",
       "accentColor": "Accent color",
-      "useTheme": "Use {name} theme"
+      "useTheme": "Use {name} theme",
+      "modes": {
+        "light": "Light",
+        "dark": "Dark"
+      },
+      "themes": {
+        "violet": {
+          "name": "Violet",
+          "tagline": "The default — confident, slightly playful."
+        },
+        "emerald": {
+          "name": "Emerald",
+          "tagline": "Growth-coded, nods at messaging without copying WhatsApp green."
+        },
+        "cobalt": {
+          "name": "Cobalt",
+          "tagline": "Clean B2B-SaaS blue — calm and product-y."
+        },
+        "amber": {
+          "name": "Amber",
+          "tagline": "Warm and friendly — feels good for SMB teams."
+        },
+        "rose": {
+          "name": "Rose",
+          "tagline": "Bold and modern — D2C, creator-economy, lifestyle."
+        }
+      }
     },
     "security": {
       "title": "Login & security",
@@ -1636,7 +1801,7 @@
       "nameLabel": "Name",
       "namePlaceholder": "e.g. Zapier automation",
       "scopesLabel": "Scopes",
-      "scopesHint": "A key with no scopes can still call <code className=\"text-[11px]\">GET /api/v1/me</code> to verify it works.",
+      "scopesHint": "A key with no scopes can still call <code>GET /api/v1/me</code> to verify it works.",
       "cancel": "Cancel",
       "creating": "Creating…",
       "createKey": "Create key",
@@ -1665,7 +1830,7 @@
     },
     "aiConfig": {
       "title": "Agent setup",
-      "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
+      "description": "Bring your own OpenAI or Anthropic key. AXION CRM PRO calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",
@@ -1732,6 +1897,125 @@
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
+    },
+    "quickReplies": {
+      "title": "Quick replies",
+      "description": "Reusable snippets — plain text or a saved interactive message — that agents can insert from the inbox composer.",
+      "newQuickReply": "New quick reply",
+      "noQuickReplies": "No quick replies yet. Create one to reuse it across conversations.",
+      "editAria": "Edit {name}",
+      "deleteAria": "Delete {name}",
+      "editDialogTitle": "Edit quick reply",
+      "newDialogTitle": "New quick reply",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Business hours",
+      "kindText": "Text",
+      "kindInteractive": "Interactive",
+      "textPlaceholder": "The message text to insert",
+      "cancel": "Cancel",
+      "save": "Save",
+      "nameRequired": "Give the quick reply a name.",
+      "saveFailed": "Couldn't save the quick reply.",
+      "updated": "Quick reply updated.",
+      "created": "Quick reply created.",
+      "deleteConfirm": "Delete this quick reply?",
+      "deleteFailed": "Couldn't delete the quick reply."
+    }
+  },
+  "Agents": {
+    "page": {
+      "title": "AI Agents",
+      "subtitle": "Your bring-your-own-key AI agent — set it up, then test it in the playground before it replies to customers in the inbox.",
+      "tabPlayground": "Playground",
+      "tabSetup": "Setup",
+      "tabUsage": "Usage"
+    },
+    "playground": {
+      "title": "Playground",
+      "subtitle": "— test replies as if you were a customer",
+      "reset": "Reset",
+      "emptyHint": "Send a message to see how your agent would reply.",
+      "emptyHintDetail": "It uses your knowledge base and behaves exactly like the auto-reply bot — including handoff.",
+      "goToSetup": "Not set up yet? Go to Setup",
+      "wouldHandoff": "Would hand off to a human here",
+      "thinking": "Thinking…",
+      "inputPlaceholder": "Type a customer message…",
+      "notConfigured": "No agent configured yet — finish Setup first.",
+      "replyFailed": "Couldn't get a reply.",
+      "networkError": "Couldn't reach the agent."
+    },
+    "usage": {
+      "title": "Token usage",
+      "description": "Tokens spent on your provider key by drafts and the auto-reply bot. Counts only — no message content is stored here.",
+      "lastNDays": "Last {count} days",
+      "loadFailed": "Failed to load usage",
+      "noUsage": "No AI usage in the last {count} days yet.",
+      "noUsageHint": "This fills in as the assistant drafts and auto-replies.",
+      "totalTokens": "Total tokens",
+      "llmCalls": "LLM calls",
+      "autoReply": "Auto-reply",
+      "drafts": "Drafts",
+      "tokensPerDay": "Tokens per day",
+      "byModel": "By model",
+      "modelStatsSummary": "{tokens} tok · {calls} {calls, plural, =1 {call} other {calls}}",
+      "truncatedNotice": "Showing a partial window — usage is high enough that only the most recent records are summarized here."
+    }
+  },
+  "InteractiveBuilder": {
+    "kindButtons": "Reply buttons",
+    "kindList": "List",
+    "bodyLabel": "Body",
+    "bodyPlaceholder": "What the customer reads above the options",
+    "headerLabel": "Header (optional)",
+    "footerLabel": "Footer (optional)",
+    "showReplyIds": "Show reply IDs (advanced)",
+    "preview": "Preview",
+    "buttonsLabel": "Buttons ({count}/{max})",
+    "buttonLabelPlaceholder": "Button label",
+    "addButton": "Add button",
+    "listButtonLabel": "List button label",
+    "rowsLabel": "Rows ({count}/{max})",
+    "sectionTitlePlaceholder": "Section title (optional)",
+    "rowTitlePlaceholder": "Row title",
+    "rowDescriptionPlaceholder": "Description (optional)",
+    "addRow": "Add row",
+    "addSection": "Add section"
+  },
+  "Scheduling": {
+    "modal": {
+      "title": "Schedule message",
+      "titleLabel": "Title (optional)",
+      "titlePlaceholder": "e.g. 20-day follow-up",
+      "content": "Content",
+      "contentText": "Text",
+      "contentImage": "Image",
+      "contentVideo": "Video",
+      "contentDocument": "Document",
+      "contentAudio": "Audio",
+      "message": "Message",
+      "insertVariable": "Insert variable",
+      "quickReply": "Quick reply",
+      "textPlaceholder": "Oi #primeiroNome, tudo bem?",
+      "chooseFile": "Choose file",
+      "captionPlaceholder": "Caption (optional)",
+      "dateTime": "Date and time",
+      "cancel": "Cancel",
+      "submit": "Schedule",
+      "onlyTextQuickReplies": "Only text quick replies can be used here.",
+      "fileSizeError": "File is {size} MB — {kind} limit is {max} MB.",
+      "uploadFailed": "Upload failed.",
+      "pickFutureDateTime": "Pick a date and time in the future.",
+      "scheduleFailed": "Could not schedule the message.",
+      "scheduleSuccess": "Message scheduled.",
+      "serverUnreachable": "Could not reach the server."
+    },
+    "list": {
+      "title": "Scheduled messages",
+      "empty": "Nothing scheduled for this conversation yet.",
+      "cancelTooltip": "Cancel",
+      "cancelFailed": "Could not cancel the scheduled message.",
+      "cancelSuccess": "Scheduled message cancelled.",
+      "serverUnreachable": "Could not reach the server."
     }
   }
 }
