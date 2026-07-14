@@ -13,7 +13,7 @@
 //   Documented from the upstream Baileys/Evolution source, NOT
 //   live-captured — lower confidence, same tier as the sendMedia DTO
 //   correction in Task 2: DOCUMENT_INBOUND_SAMPLE, LOCATION_INBOUND_SAMPLE,
-//   REACTION_INBOUND_SAMPLE, BUTTON_REPLY_INBOUND_SAMPLE.
+//   REACTION_INBOUND_SAMPLE, BUTTON_REPLY_INBOUND_SAMPLE, STICKER_INBOUND_SAMPLE.
 //
 // Phone numbers/names anonymized; base64 truncated to a short valid
 // placeholder (the real captured lengths were in the hundreds of KB —
@@ -119,6 +119,29 @@ export const AUDIO_INBOUND_SAMPLE = {
     },
     messageType: 'audioMessage',
     messageTimestamp: 1783888774,
+  },
+};
+
+/** Documented from the upstream Baileys `stickerMessage` type, NOT
+ *  live-captured — same confidence tier as DOCUMENT_INBOUND_SAMPLE/
+ *  LOCATION_INBOUND_SAMPLE. Stickers are typically image/webp. */
+export const STICKER_INBOUND_SAMPLE = {
+  event: 'messages.upsert',
+  instance: 'axion-test',
+  data: {
+    key: {
+      remoteJid: '5511900000002@s.whatsapp.net',
+      fromMe: false,
+      id: 'ANON00000000000000000000000000CC',
+      participant: '',
+    },
+    pushName: 'Test Customer',
+    message: {
+      stickerMessage: { mimetype: 'image/webp' },
+      base64: 'ZmFrZS1zdGlja2VyLWJ5dGVz',
+    },
+    messageType: 'stickerMessage',
+    messageTimestamp: 1783888790,
   },
 };
 
