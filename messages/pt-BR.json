@@ -18,7 +18,7 @@
     "titleJoin": "Criar conta e entrar",
     "titleCreate": "Criar conta",
     "descJoin": "Confirme seu e-mail e depois aceite o convite para entrar na equipe.",
-    "descCreate": "Comece a usar o CRM Template para WhatsApp",
+    "descCreate": "Comece a usar o AXION CRM PRO",
     "fullNameLabel": "Nome completo",
     "fullNamePlaceholder": "João da Silva",
     "emailLabel": "E-mail",
@@ -86,7 +86,7 @@
     "loading": "Carregando..."
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "AXION CRM PRO",
     "primaryNavAria": "Navegação principal",
     "dashboard": "Dashboard",
     "inbox": "Caixa de entrada",
@@ -286,7 +286,7 @@
       "labelTooLong": "O rótulo deve ter no máximo {max} caracteres",
       "copied": "Link de convite copiado",
       "clipboardBlocked": "Área de transferência bloqueada — copie o link manualmente",
-      "whatsappMessage": "Entre para {accountName} no wacrm usando este link (válido por {expiresInDays} dias): {url}"
+      "whatsappMessage": "Entre para {accountName} no AXION CRM PRO usando este link (válido por {expiresInDays} dias): {url}"
     },
     "tagsAndFields": {
       "title": "Campos e tags",
@@ -397,8 +397,8 @@
       "saveResubmit": "Salvar e reenviar",
       "submitApproval": "Enviar para aprovação",
       "deleteDialogTitle": "Excluir modelo?",
-      "deleteMetaDesc": "\"{name}\" será excluído da Meta e do wacrm. Transmissões ativas que usam este modelo começarão a falhar no próximo envio. Isso não pode ser desfeito.",
-      "deleteLocalDesc": "\"{name}\" será excluído do wacrm. Ele nunca foi enviado à Meta, então nenhuma limpeza remota é necessária.",
+      "deleteMetaDesc": "\"{name}\" será excluído da Meta e do AXION CRM PRO. Transmissões ativas que usam este modelo começarão a falhar no próximo envio. Isso não pode ser desfeito.",
+      "deleteLocalDesc": "\"{name}\" será excluído do AXION CRM PRO. Ele nunca foi enviado à Meta, então nenhuma limpeza remota é necessária.",
       "deleting": "Excluindo…",
       "delete": "Excluir",
       "toastLoadFailed": "Falha ao carregar modelos",
@@ -439,7 +439,7 @@
       "notConnected": "Não conectado",
       "connectedDesc": "Seu token de acesso autentica com a Meta. Veja o status de registro abaixo para saber se os webhooks estão realmente conectados.",
       "notConnectedDesc": "Configure suas credenciais da API da Meta abaixo para conectar sua conta do WhatsApp Business.",
-      "registered": "Registrado — a Meta entregará eventos ao wacrm",
+      "registered": "Registrado — a Meta entregará eventos ao AXION CRM PRO",
       "notRegistered": "Não registrado — a Meta não entregará eventos",
       "verifyWithMeta": "Verificar com a Meta",
       "subscribedSince": "Inscrito desde {date}. Clique em Verificar com a Meta se os eventos pararem de chegar.",
@@ -463,7 +463,7 @@
       "twoStepPin": "PIN de verificação em duas etapas",
       "optional": "(opcional)",
       "pinPlaceholder": "PIN de 6 dígitos do Gerenciador do WhatsApp da Meta",
-      "pinHint": "Necessário apenas para habilitar mensagens recebidas em um número de produção. Defina-o no Meta Business Manager → Contas do WhatsApp → Números de telefone → Verificação em duas etapas e cole-o aqui para que o wacrm possa inscrever o número — caso contrário, a Meta roteia os eventos recebidos para o último app que reivindicou o número (o sintoma que afeta números secundários sob uma WABA compartilhada). Números de teste da Meta não têm PIN e já vêm pré-registrados — deixe em branco para eles. Deixar em branco também mantém um registro existente sem alterações.",
+      "pinHint": "Necessário apenas para habilitar mensagens recebidas em um número de produção. Defina-o no Meta Business Manager → Contas do WhatsApp → Números de telefone → Verificação em duas etapas e cole-o aqui para que o AXION CRM PRO possa inscrever o número — caso contrário, a Meta roteia os eventos recebidos para o último app que reivindicou o número (o sintoma que afeta números secundários sob uma WABA compartilhada). Números de teste da Meta não têm PIN e já vêm pré-registrados — deixe em branco para eles. Deixar em branco também mantém um registro existente sem alterações.",
       "webhookTitle": "Configuração do webhook",
       "webhookDesc": "Use esta URL como retorno de chamada (callback) do webhook no Painel de Apps da Meta.",
       "webhookUrl": "URL de retorno de chamada do webhook",
@@ -655,7 +655,7 @@
     },
     "aiConfig": {
       "title": "Configuração do agente",
-      "description": "Use sua própria chave da OpenAI ou da Anthropic. O wacrm chama o provedor diretamente com sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas geradas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
+      "description": "Use sua própria chave da OpenAI ou da Anthropic. O AXION CRM PRO chama o provedor diretamente com sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas geradas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
       "adminOnlyConfig": "Somente administradores e proprietários podem alterar a configuração de IA.",
       "loadFailed": "Falha ao carregar a configuração de IA",
       "providerAndKey": "Provedor e chave",
