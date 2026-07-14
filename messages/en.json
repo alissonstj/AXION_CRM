@@ -287,8 +287,8 @@
       "interactiveMessage": "Interactive message",
       "quickReplies": "Quick replies",
       "quickRepliesEmpty": "No quick replies yet. Add some in Settings → Quick replies.",
-      "scheduleMessage": "Schedule message",
-      "scheduledMessages": "Scheduled messages",
+      "scheduleMessage": "Agendar mensagem",
+      "scheduledMessages": "Mensagens agendadas",
       "saveAsQuickReply": "Save as quick reply",
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
@@ -605,7 +605,7 @@
       "noContact": "No contact",
       "won": "Won",
       "lost": "Lost",
-      "scheduleMessage": "Schedule message"
+      "scheduleMessage": "Agendar mensagem"
     },
     "form": {
       "editDeal": "Edit Deal",

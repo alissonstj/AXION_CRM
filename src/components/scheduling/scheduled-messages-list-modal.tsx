@@ -27,9 +27,13 @@ function formatScheduledAt(iso: string): string {
   });
 }
 
+const CONTENT_TYPE_LABEL: Record<string, string> = {
+  text: "texto", image: "imagem", video: "vídeo", document: "documento", audio: "áudio",
+};
+
 function previewText(item: ScheduledMessage): string {
   if (item.content_text) return item.content_text;
-  return `[${item.content_type}]`;
+  return `[${CONTENT_TYPE_LABEL[item.content_type] ?? item.content_type}]`;
 }
 
 export interface ScheduledMessagesListModalProps {
@@ -77,13 +81,13 @@ export function ScheduledMessagesListModal({
       const res = await fetch(`/api/scheduled-messages/${id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error ?? "Could not cancel the scheduled message.");
+        toast.error(data.error ?? "Não foi possível cancelar o agendamento.");
         return;
       }
       setItems((prev) => prev.filter((i) => i.id !== id));
-      toast.success("Scheduled message cancelled.");
+      toast.success("Agendamento cancelado.");
     } catch {
-      toast.error("Could not reach the server.");
+      toast.error("Não foi possível conectar ao servidor.");
     } finally {
       setCancellingId(null);
     }
@@ -93,7 +97,7 @@ export function ScheduledMessagesListModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Scheduled messages</DialogTitle>
+          <DialogTitle>Mensagens agendadas</DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto">
           {loading ? (
@@ -102,7 +106,7 @@ export function ScheduledMessagesListModal({
             </div>
           ) : items.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Nothing scheduled for this conversation yet.
+              Nada agendado para esta conversa ainda.
             </p>
           ) : (
             <ul className="flex flex-col gap-1">
@@ -129,7 +133,7 @@ export function ScheduledMessagesListModal({
                     variant="ghost"
                     size="sm"
                     className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-red-400"
-                    title="Cancel"
+                    title="Cancelar"
                     onClick={() => void handleCancel(item.id)}
                     disabled={cancellingId === item.id}
                   >
