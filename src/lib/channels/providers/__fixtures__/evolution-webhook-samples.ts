@@ -5,7 +5,10 @@
 //   Live-captured (real structure, from a real connected WhatsApp
 //   account during design): TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE,
 //   IMAGE_INBOUND_SAMPLE, AUDIO_INBOUND_SAMPLE, VIDEO_GROUP_SAMPLE,
-//   CONNECTION_UPDATE_ERROR_SAMPLE.
+//   CONNECTION_UPDATE_ERROR_SAMPLE, REPLY_INBOUND_SAMPLE (2026-07-14,
+//   pulled from the connected instance's own message history —
+//   `contextInfo` confirmed as a top-level sibling of `message`, not
+//   nested inside it).
 //
 //   Documented from the upstream Baileys/Evolution source, NOT
 //   live-captured — lower confidence, same tier as the sendMedia DTO
@@ -33,6 +36,32 @@ export const TEXT_INBOUND_SAMPLE = {
     message: { conversation: 'Oiiiii teste' },
     messageType: 'conversation',
     messageTimestamp: 1783887066,
+  },
+};
+
+/** A real quoted-reply message, structure pulled from the connected
+ *  instance's own message history 2026-07-14. `contextInfo.stanzaId`
+ *  is the quoted message's WhatsApp id — a sibling of `message`, not
+ *  nested inside it. */
+export const REPLY_INBOUND_SAMPLE = {
+  event: 'messages.upsert',
+  instance: 'axion-test',
+  data: {
+    key: {
+      remoteJid: '5511900000002@s.whatsapp.net',
+      fromMe: false,
+      id: 'ANON0000000000000000000000000005',
+      participant: '',
+    },
+    pushName: 'Test Customer',
+    message: { conversation: 'claro, aqui esta a resposta' },
+    messageType: 'conversation',
+    messageTimestamp: 1783887200,
+    contextInfo: {
+      stanzaId: 'ANON0000000000000000000000000001',
+      participant: '5511900000001@s.whatsapp.net',
+      quotedMessage: { conversation: 'pergunta original' },
+    },
   },
 };
 

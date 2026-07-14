@@ -119,6 +119,32 @@ describe('sendEvolutionText', () => {
     expect(url).toBe('http://evo.local/message/sendText/axion-acc1');
     expect(JSON.parse(init?.body as string)).toEqual({ number: '5511999999999', text: 'oi' });
   });
+
+  it('wraps `quoted` as { key: quoted } — confirmed live 2026-07-14 against a real quoted reply', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'WA-ID-1b' } }),
+    } as Response);
+    await sendEvolutionText({
+      ...BASE, instanceName: 'axion-acc1', to: '5511999999999', text: 'resposta',
+      quoted: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: true, id: 'PARENT-ID' },
+    });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toEqual({
+      number: '5511999999999', text: 'resposta',
+      quoted: { key: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: true, id: 'PARENT-ID' } },
+    });
+  });
+
+  it('omits `quoted` entirely when not replying to anything', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'WA-ID-1c' } }),
+    } as Response);
+    await sendEvolutionText({ ...BASE, instanceName: 'axion-acc1', to: '5511999999999', text: 'oi' });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init?.body as string)).not.toHaveProperty('quoted');
+  });
 });
 
 describe('sendEvolutionMedia', () => {
@@ -136,6 +162,22 @@ describe('sendEvolutionMedia', () => {
     expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json' });
     expect(JSON.parse(init?.body as string)).toEqual({
       number: '5511999999999', mediatype: 'image', media: 'https://example.com/a.jpg', caption: 'oi',
+    });
+  });
+
+  it('wraps `quoted` the same way sendText does', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'WA-ID-2b' } }),
+    } as Response);
+    await sendEvolutionMedia({
+      ...BASE, instanceName: 'axion-acc1', to: '5511999999999',
+      mediatype: 'image', media: 'https://example.com/a.jpg',
+      quoted: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'PARENT-ID' },
+    });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      quoted: { key: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false, id: 'PARENT-ID' } },
     });
   });
 });
