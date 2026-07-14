@@ -897,6 +897,8 @@
       "replyIdsHelp": "Comma-separated button/list-row ids to match, exact. Use the same ids you set on a Send Buttons / Send List step.",
       "schedule": "Schedule",
       "scheduleHint": "Cron expression (e.g. 0 9 * * 1-5)",
+      "inactivityDays": "Dias de inatividade",
+      "inactivityDaysHint": "Dispara uma vez para cada contato sem mensagem dele há esse número de dias",
       "active": "Active",
       "activeAria": "Active",
       "save": "Save",

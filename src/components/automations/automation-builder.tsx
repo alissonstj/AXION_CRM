@@ -861,21 +861,44 @@ function TriggerCard({
               </div>
             )}
             {type === "time_based" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  {t("schedule")}
-                </label>
-                <Input
-                  placeholder="Cron expression or HH:mm"
-                  value={(config.schedule as string) ?? ""}
-                  onChange={(e) =>
-                    onConfigChange({ ...config, schedule: e.target.value })
-                  }
-                  className="bg-muted text-foreground"
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {t("scheduleHint")}
-                </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("schedule")}
+                  </label>
+                  <Input
+                    placeholder="Cron expression or HH:mm"
+                    value={(config.schedule as string) ?? ""}
+                    onChange={(e) =>
+                      onConfigChange({ ...config, schedule: e.target.value })
+                    }
+                    className="bg-muted text-foreground"
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {t("scheduleHint")}
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("inactivityDays")}
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="20"
+                    value={(config.inactivity_days as number | undefined)?.toString() ?? ""}
+                    onChange={(e) =>
+                      onConfigChange({
+                        ...config,
+                        inactivity_days: e.target.value === "" ? undefined : Number(e.target.value),
+                      })
+                    }
+                    className="bg-muted text-foreground"
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {t("inactivityDaysHint")}
+                  </p>
+                </div>
               </div>
             )}
           </div>

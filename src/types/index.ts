@@ -493,9 +493,19 @@ export interface TagTriggerConfig {
 }
 
 export interface TimeBasedTriggerConfig {
-  /** Cron expression or simple HH:mm string; engine can accept either. */
+  /** Cron expression or simple HH:mm string; engine can accept either.
+   *  For the inactivity sweep below, this is what time of day the daily
+   *  scan runs — not itself the inactivity condition. */
   schedule: string;
   timezone?: string;
+  /** Fires once per contact whose most recent CUSTOMER message is at
+   *  least this many days old — a "no reply from us in N days" follow-
+   *  up, not a recurring daily blast. Optional on the type (existing
+   *  rows may predate this field) but required by
+   *  `validateTriggerForActivation` before the automation can go live —
+   *  see src/app/api/automations/cron/route.ts's inactivity sweep for
+   *  the actual dispatch logic. */
+  inactivity_days?: number;
 }
 
 export interface InteractiveReplyTriggerConfig {

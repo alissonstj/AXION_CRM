@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockResumePendingExecution, mockGetChannelForAccount, mockSendText, mockSendMedia } = vi.hoisted(() => ({
+const { mockResumePendingExecution, mockRunAutomationsForTrigger, mockGetChannelForAccount, mockSendText, mockSendMedia } = vi.hoisted(() => ({
   mockResumePendingExecution: vi.fn(),
+  mockRunAutomationsForTrigger: vi.fn(),
   mockGetChannelForAccount: vi.fn(),
   mockSendText: vi.fn(),
   mockSendMedia: vi.fn(),
@@ -9,6 +10,7 @@ const { mockResumePendingExecution, mockGetChannelForAccount, mockSendText, mock
 
 vi.mock('@/lib/automations/engine', () => ({
   resumePendingExecution: mockResumePendingExecution,
+  runAutomationsForTrigger: mockRunAutomationsForTrigger,
 }));
 
 vi.mock('@/lib/channels/factory', () => ({
@@ -29,6 +31,15 @@ interface State {
   scheduledMessages: Record<string, unknown>[];
   messageInserts: Record<string, unknown>[];
   conversationUpdates: Record<string, unknown>[];
+  timeBasedAutomations: Record<string, unknown>[];
+  automationContactRunInserts: Record<string, unknown>[];
+  /** Failing this insert simulates losing the claim race (a concurrent
+   *  sweep already recorded this automation+contact pair first). */
+  automationContactRunInsertShouldFail: boolean;
+  /** automation_id -> contact rows the inactivity RPC should return. */
+  inactiveContactsByAutomation: Record<string, { contact_id: string }[]>;
+  rpcError: string | null;
+  rpcCalls: { automationId: string; cutoff: string }[];
 }
 
 function selectBuilder(rows: () => Record<string, unknown>[]) {
@@ -37,6 +48,15 @@ function selectBuilder(rows: () => Record<string, unknown>[]) {
     lte: () => builder,
     order: () => builder,
     limit: async () => ({ data: rows().filter((r) => r.status === 'pending'), error: null }),
+  };
+  return builder;
+}
+
+/** `.select(...).eq(...).eq(...)` awaited directly — no order/limit. */
+function selectEqAwaitBuilder(rows: () => Record<string, unknown>[]) {
+  const builder = {
+    eq: () => builder,
+    then: (resolve: (v: unknown) => void) => resolve({ data: rows(), error: null }),
   };
   return builder;
 }
@@ -105,7 +125,28 @@ function makeAdmin(state: State) {
           }),
         };
       }
+      if (table === 'automations') {
+        return { select: () => selectEqAwaitBuilder(() => state.timeBasedAutomations) };
+      }
+      if (table === 'automation_contact_runs') {
+        return {
+          insert: (row: Record<string, unknown>) => {
+            if (state.automationContactRunInsertShouldFail) {
+              return Promise.resolve({ data: null, error: { message: 'conflict' } });
+            }
+            state.automationContactRunInserts.push(row);
+            return Promise.resolve({ data: null, error: null });
+          },
+        };
+      }
       throw new Error(`unexpected table in this test: ${table}`);
+    },
+    rpc: async (name: string, params: Record<string, unknown>) => {
+      if (name !== 'inactive_contacts_for_automation') throw new Error(`unexpected rpc: ${name}`);
+      const automationId = params.p_automation_id as string;
+      state.rpcCalls.push({ automationId, cutoff: params.p_cutoff as string });
+      if (state.rpcError) return { data: null, error: { message: state.rpcError } };
+      return { data: state.inactiveContactsByAutomation[automationId] ?? [], error: null };
     },
   };
 }
@@ -123,8 +164,13 @@ function req(secret: string | null) {
 
 beforeEach(() => {
   process.env.AUTOMATION_CRON_SECRET = 'test-secret';
-  state = { automationPending: [], scheduledMessages: [], messageInserts: [], conversationUpdates: [] };
+  state = {
+    automationPending: [], scheduledMessages: [], messageInserts: [], conversationUpdates: [],
+    timeBasedAutomations: [], automationContactRunInserts: [], automationContactRunInsertShouldFail: false,
+    inactiveContactsByAutomation: {}, rpcError: null, rpcCalls: [],
+  };
   mockResumePendingExecution.mockReset().mockResolvedValue(undefined);
+  mockRunAutomationsForTrigger.mockReset().mockResolvedValue(undefined);
   mockSendText.mockReset().mockResolvedValue({ providerMessageId: 'wamid.sent' });
   mockSendMedia.mockReset().mockResolvedValue({ providerMessageId: 'wamid.media-sent' });
   mockGetChannelForAccount.mockReset().mockResolvedValue({
@@ -243,5 +289,111 @@ describe('GET /api/automations/cron — scheduled_messages', () => {
     expect(json.scheduled_messages).toBe(2);
     expect(mockSendText).toHaveBeenCalledTimes(2);
     expect(mockSendText).toHaveBeenCalledWith({ to: '5511888888888', text: 'Oi Bruna, tudo bem?' });
+  });
+});
+
+describe('GET /api/automations/cron — inactivity follow-up sweep (Fase 4)', () => {
+  function timeBasedAutomation(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: 'auto-1', account_id: 'acc-1', trigger_config: { schedule: '09:00', inactivity_days: 20 },
+      ...overrides,
+    };
+  }
+
+  it('dispatches once per contact the RPC returns, recording automation_contact_runs first', async () => {
+    state.timeBasedAutomations = [timeBasedAutomation()];
+    state.inactiveContactsByAutomation['auto-1'] = [{ contact_id: 'contact-1' }, { contact_id: 'contact-2' }];
+
+    const res = await GET(req('test-secret'));
+    const json = await res.json();
+
+    expect(json.inactivity_follow_ups).toBe(2);
+    expect(mockRunAutomationsForTrigger).toHaveBeenCalledTimes(2);
+    expect(mockRunAutomationsForTrigger).toHaveBeenCalledWith({
+      accountId: 'acc-1', triggerType: 'time_based', contactId: 'contact-1', context: {},
+    });
+    expect(mockRunAutomationsForTrigger).toHaveBeenCalledWith({
+      accountId: 'acc-1', triggerType: 'time_based', contactId: 'contact-2', context: {},
+    });
+    expect(state.automationContactRunInserts).toEqual([
+      { automation_id: 'auto-1', contact_id: 'contact-1' },
+      { automation_id: 'auto-1', contact_id: 'contact-2' },
+    ]);
+  });
+
+  it('passes a cutoff derived from inactivity_days (now minus N days) to the RPC', async () => {
+    state.timeBasedAutomations = [timeBasedAutomation({ trigger_config: { schedule: '09:00', inactivity_days: 5 } })];
+    const before = Date.now();
+    await GET(req('test-secret'));
+    const after = Date.now();
+
+    expect(state.rpcCalls).toHaveLength(1);
+    expect(state.rpcCalls[0].automationId).toBe('auto-1');
+    const cutoffMs = new Date(state.rpcCalls[0].cutoff).getTime();
+    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+    expect(cutoffMs).toBeGreaterThanOrEqual(before - fiveDaysMs - 1000);
+    expect(cutoffMs).toBeLessThanOrEqual(after - fiveDaysMs + 1000);
+  });
+
+  it('skips automations with no inactivity_days configured (schedule-only config, not yet migrated)', async () => {
+    state.timeBasedAutomations = [timeBasedAutomation({ trigger_config: { schedule: '09:00' } })];
+    const res = await GET(req('test-secret'));
+    expect((await res.json()).inactivity_follow_ups).toBe(0);
+    expect(mockRunAutomationsForTrigger).not.toHaveBeenCalled();
+  });
+
+  it('skips automations with inactivity_days <= 0', async () => {
+    state.timeBasedAutomations = [timeBasedAutomation({ trigger_config: { schedule: '09:00', inactivity_days: 0 } })];
+    await GET(req('test-secret'));
+    expect(mockRunAutomationsForTrigger).not.toHaveBeenCalled();
+  });
+
+  it('skips a contact when claiming automation_contact_runs fails (lost the race to an overlapping sweep)', async () => {
+    state.timeBasedAutomations = [timeBasedAutomation()];
+    state.inactiveContactsByAutomation['auto-1'] = [{ contact_id: 'contact-1' }];
+    state.automationContactRunInsertShouldFail = true;
+
+    const res = await GET(req('test-secret'));
+    expect((await res.json()).inactivity_follow_ups).toBe(0);
+    expect(mockRunAutomationsForTrigger).not.toHaveBeenCalled();
+  });
+
+  it('does not crash the sweep when the RPC itself errors — just skips that automation', async () => {
+    state.timeBasedAutomations = [timeBasedAutomation()];
+    state.rpcError = 'function does not exist';
+    const res = await GET(req('test-secret'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).inactivity_follow_ups).toBe(0);
+  });
+
+  it('processes multiple time_based automations independently, each against its own account', async () => {
+    state.timeBasedAutomations = [
+      timeBasedAutomation({ id: 'auto-1', account_id: 'acc-1' }),
+      timeBasedAutomation({ id: 'auto-2', account_id: 'acc-2' }),
+    ];
+    state.inactiveContactsByAutomation['auto-1'] = [{ contact_id: 'contact-1' }];
+    state.inactiveContactsByAutomation['auto-2'] = [{ contact_id: 'contact-9' }];
+
+    await GET(req('test-secret'));
+
+    expect(mockRunAutomationsForTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'acc-1', contactId: 'contact-1' }),
+    );
+    expect(mockRunAutomationsForTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'acc-2', contactId: 'contact-9' }),
+    );
+  });
+
+  it('rolls the inactivity count into the top-level processed total', async () => {
+    state.automationPending = [
+      { id: 'pe-1', status: 'pending', run_at: new Date(Date.now() - 1000).toISOString(), automation_id: 'a1', account_id: 'acc-1', user_id: 'u1', contact_id: 'c1', next_step_position: 1, context: {} },
+    ];
+    state.timeBasedAutomations = [timeBasedAutomation()];
+    state.inactiveContactsByAutomation['auto-1'] = [{ contact_id: 'contact-1' }];
+
+    const res = await GET(req('test-secret'));
+    const json = await res.json();
+    expect(json.processed).toBe(json.automation_pending_executions + json.scheduled_messages + json.inactivity_follow_ups);
+    expect(json.processed).toBe(2);
   });
 });

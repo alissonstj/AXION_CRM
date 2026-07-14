@@ -249,13 +249,21 @@ describe("validateTriggerForActivation", () => {
     ).toEqual([]);
   });
 
-  it("requires schedule on time_based triggers", () => {
+  it("requires schedule and inactivity_days on time_based triggers", () => {
     expect(validateTriggerForActivation("time_based", {})).toEqual([
       { path: "trigger.schedule", message: "schedule is required" },
+      { path: "trigger.inactivity_days", message: "inactivity_days must be a positive number" },
     ]);
     expect(
-      validateTriggerForActivation("time_based", { schedule: "0 9 * * *" }),
+      validateTriggerForActivation("time_based", { schedule: "0 9 * * *", inactivity_days: 20 }),
     ).toEqual([]);
+  });
+
+  it("rejects a zero, negative, or non-numeric inactivity_days", () => {
+    for (const bad of [0, -5, "20", null]) {
+      const issues = validateTriggerForActivation("time_based", { schedule: "09:00", inactivity_days: bad });
+      expect(issues.map((i) => i.path)).toContain("trigger.inactivity_days");
+    }
   });
 
   it("requires tag_id on tag_added triggers", () => {

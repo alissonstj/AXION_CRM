@@ -181,6 +181,13 @@ export function validateTriggerForActivation(
     if (!nonEmpty(cfg.schedule)) {
       issues.push({ path: 'trigger.schedule', message: 'schedule is required' })
     }
+    const days = cfg.inactivity_days
+    if (typeof days !== 'number' || !Number.isFinite(days) || days <= 0) {
+      issues.push({
+        path: 'trigger.inactivity_days',
+        message: 'inactivity_days must be a positive number',
+      })
+    }
   } else if (triggerType === 'tag_added') {
     if (!nonEmpty(cfg.tag_id)) {
       issues.push({ path: 'trigger.tag_id', message: 'tag is required' })

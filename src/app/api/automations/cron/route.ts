@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { resumePendingExecution } from '@/lib/automations/engine'
+import { resumePendingExecution, runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
 import { getChannelForAccount, ChannelConfigError } from '@/lib/channels/factory'
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
@@ -172,12 +172,80 @@ async function drainScheduledMessages(admin: SupabaseClient): Promise<number> {
   return processed
 }
 
+interface TimeBasedAutomationRow {
+  id: string
+  account_id: string
+  trigger_config: { inactivity_days?: number } | null
+}
+
+/**
+ * Fase 4: "no reply from this contact in N days" follow-up. Every
+ * active `time_based` automation with `inactivity_days` configured
+ * (see automation-builder.tsx's trigger config UI and
+ * validate.ts's activation check) gets scanned once per sweep.
+ *
+ * `inactive_contacts_for_automation` (migration 044) does the actual
+ * aggregation server-side (MAX(customer message) per contact, filtered
+ * against automation_contact_runs for the dedup rule — see that
+ * migration's header comment). This function's own job is just to
+ * iterate accounts/automations and dispatch.
+ *
+ * Records the automation_contact_runs row BEFORE dispatching, not
+ * after — the same "claim before doing the work" ordering as the two
+ * sweeps above, so an overlapping sweep invocation is less likely to
+ * pick up the same contact twice. `runAutomationsForTrigger` owns its
+ * own try/catch and never throws (see automations/engine.ts), so
+ * awaiting it here can't skip the dispatch count on a step failure.
+ */
+async function sweepInactivityFollowUps(admin: SupabaseClient): Promise<number> {
+  const { data: automations, error } = await admin
+    .from('automations')
+    .select('id, account_id, trigger_config')
+    .eq('trigger_type', 'time_based')
+    .eq('is_active', true)
+
+  if (error || !automations || automations.length === 0) return 0
+
+  let dispatched = 0
+  for (const raw of automations as TimeBasedAutomationRow[]) {
+    const inactivityDays = raw.trigger_config?.inactivity_days
+    if (!inactivityDays || inactivityDays <= 0) continue
+
+    const cutoff = new Date(Date.now() - inactivityDays * 86_400_000).toISOString()
+    const { data: contacts, error: rpcError } = await admin.rpc('inactive_contacts_for_automation', {
+      p_automation_id: raw.id,
+      p_cutoff: cutoff,
+    })
+    if (rpcError || !contacts) {
+      console.error('[automations cron] inactivity scan failed:', rpcError?.message)
+      continue
+    }
+
+    for (const { contact_id: contactId } of contacts as { contact_id: string }[]) {
+      const { error: recordError } = await admin
+        .from('automation_contact_runs')
+        .insert({ automation_id: raw.id, contact_id: contactId })
+      if (recordError) continue // couldn't claim — skip rather than risk an unrecorded duplicate
+
+      await runAutomationsForTrigger({
+        accountId: raw.account_id,
+        triggerType: 'time_based',
+        contactId,
+        context: {},
+      })
+      dispatched++
+    }
+  }
+
+  return dispatched
+}
+
 /**
  * Drains all due background work behind a single pinger URL: an
- * automation's `wait`-step queue, and manually scheduled per-lead
- * follow-ups. Meant to be hit on a schedule (Vercel Cron / external
- * pinger) — requires a shared secret via the `x-cron-secret` header to
- * match `AUTOMATION_CRON_SECRET`.
+ * automation's `wait`-step queue, manually scheduled per-lead
+ * follow-ups, and the inactivity-follow-up sweep. Meant to be hit on a
+ * schedule (Vercel Cron / external pinger) — requires a shared secret
+ * via the `x-cron-secret` header to match `AUTOMATION_CRON_SECRET`.
  */
 export async function GET(request: Request) {
   const expected = process.env.AUTOMATION_CRON_SECRET
@@ -192,10 +260,12 @@ export async function GET(request: Request) {
   const admin = supabaseAdmin()
   const automationsProcessed = await drainAutomationPendingExecutions(admin)
   const scheduledMessagesProcessed = await drainScheduledMessages(admin)
+  const inactivityDispatched = await sweepInactivityFollowUps(admin)
 
   return NextResponse.json({
-    processed: automationsProcessed + scheduledMessagesProcessed,
+    processed: automationsProcessed + scheduledMessagesProcessed + inactivityDispatched,
     automation_pending_executions: automationsProcessed,
     scheduled_messages: scheduledMessagesProcessed,
+    inactivity_follow_ups: inactivityDispatched,
   })
 }
