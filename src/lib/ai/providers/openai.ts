@@ -8,7 +8,12 @@ import {
   type ProviderArgs,
 } from './shared'
 
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+// `baseUrl` (no trailing slash, no path) + '/chat/completions' — same
+// convention as the OpenAI SDK's own `baseURL` option, so a value like
+// Groq's free-tier, OpenAI-compatible endpoint
+// (https://api.groq.com/openai/v1) works exactly as OpenAI's own docs
+// describe pointing their client at a compatible host.
+const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 
 interface OpenAiResponse {
   choices?: { message?: { content?: string } }[]
@@ -25,11 +30,12 @@ interface OpenAiResponse {
  * in `generateReply`).
  */
 export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs } = args
+  const { apiKey, model, baseUrl, systemPrompt, messages, timeoutMs } = args
+  const url = `${(baseUrl?.trim().replace(/\/+$/, '')) || OPENAI_DEFAULT_BASE_URL}/chat/completions`
 
   let res: Response
   try {
-    res = await fetch(OPENAI_URL, {
+    res = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,

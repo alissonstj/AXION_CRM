@@ -17,6 +17,12 @@ export interface AiConfig {
   provider: AiProvider
   model: string
   apiKey: string
+  /** Optional override for the provider's base URL — lets the account
+   *  point `provider` at an OpenAI/Anthropic-compatible third-party
+   *  host (e.g. Groq's free-tier, OpenAI-compatible endpoint) instead
+   *  of the real api.openai.com / api.anthropic.com. Null (the common
+   *  case) means "use the real provider URL". */
+  baseUrl: string | null
   systemPrompt: string | null
   isActive: boolean
   autoReplyEnabled: boolean

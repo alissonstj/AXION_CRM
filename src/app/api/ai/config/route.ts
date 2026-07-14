@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, base_url, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -84,6 +84,22 @@ export async function POST(request: Request) {
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
 
+    // Optional override so the account can point `provider` at an
+    // OpenAI/Anthropic-compatible third-party host (e.g. Groq's free
+    // tier) instead of the real provider URL. Empty/absent -> null
+    // ("use the real provider URL").
+    const rawBaseUrl = typeof body.base_url === 'string' ? body.base_url.trim() : ''
+    let baseUrl: string | null = null
+    if (rawBaseUrl) {
+      try {
+        const parsed = new URL(rawBaseUrl)
+        if (parsed.protocol !== 'https:') throw new Error('not https')
+      } catch {
+        return bad('base_url must be a valid https:// URL')
+      }
+      baseUrl = rawBaseUrl.replace(/\/+$/, '')
+    }
+
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
         ? body.system_prompt.trim()
@@ -128,7 +144,7 @@ export async function POST(request: Request) {
     // Reuse the stored key when the form didn't send a fresh one.
     const { data: existing } = await supabase
       .from('ai_configs')
-      .select('id, provider, model, api_key')
+      .select('id, provider, model, api_key, base_url')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -153,7 +169,8 @@ export async function POST(request: Request) {
       !existing ||
       rawKey !== '' ||
       provider !== existing.provider ||
-      model !== existing.model
+      model !== existing.model ||
+      baseUrl !== (existing.base_url ?? null)
 
     if (credentialsChanged) {
       try {
@@ -161,6 +178,7 @@ export async function POST(request: Request) {
           provider,
           model,
           apiKey: apiKeyPlain,
+          baseUrl,
           systemPrompt,
           isActive,
           autoReplyEnabled,
@@ -201,6 +219,7 @@ export async function POST(request: Request) {
     const shared: Record<string, unknown> = {
       provider,
       model,
+      base_url: baseUrl,
       system_prompt: systemPrompt,
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,

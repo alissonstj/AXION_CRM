@@ -38,12 +38,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'model is required' }, { status: 400 })
     }
 
+    // Optional endpoint override — same validation as /api/ai/config.
+    const rawBaseUrl = typeof body.base_url === 'string' ? body.base_url.trim() : ''
+    let baseUrl: string | null = null
+    if (rawBaseUrl) {
+      try {
+        const parsed = new URL(rawBaseUrl)
+        if (parsed.protocol !== 'https:') throw new Error('not https')
+      } catch {
+        return NextResponse.json(
+          { error: 'base_url must be a valid https:// URL' },
+          { status: 400 },
+        )
+      }
+      baseUrl = rawBaseUrl.replace(/\/+$/, '')
+    }
+
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
     let apiKeyPlain = rawKey
     if (!apiKeyPlain) {
       const { data: existing } = await supabase
         .from('ai_configs')
-        .select('api_key')
+        .select('api_key, base_url')
         .eq('account_id', accountId)
         .maybeSingle()
       if (!existing?.api_key) {
@@ -60,6 +76,11 @@ export async function POST(request: Request) {
           { status: 400 },
         )
       }
+      // The form only sends base_url when the admin is actively editing
+      // it — re-testing a stored key (no fresh key typed) should also
+      // re-use the stored endpoint, not silently fall back to the real
+      // provider URL.
+      if (!rawBaseUrl) baseUrl = existing.base_url ?? null
     }
 
     try {
@@ -67,6 +88,7 @@ export async function POST(request: Request) {
         provider,
         model,
         apiKey: apiKeyPlain,
+        baseUrl,
         systemPrompt: null,
         isActive: true,
         autoReplyEnabled: false,

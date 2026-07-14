@@ -22,6 +22,7 @@ const ROW = {
   provider: 'openai',
   model: 'gpt-x',
   api_key: 'enc-key',
+  base_url: null,
   system_prompt: null,
   is_active: false,
   auto_reply_enabled: false,
@@ -47,5 +48,19 @@ describe('loadAiConfig requireActive', () => {
     expect(
       await loadAiConfig(dbReturning(null), 'acct', { requireActive: false }),
     ).toBeNull()
+  })
+
+  it('maps base_url through to baseUrl (null when never set)', async () => {
+    const config = await loadAiConfig(dbReturning(ROW), 'acct', { requireActive: false })
+    expect(config!.baseUrl).toBeNull()
+  })
+
+  it('maps a custom base_url through unchanged', async () => {
+    const config = await loadAiConfig(
+      dbReturning({ ...ROW, base_url: 'https://api.groq.com/openai/v1' }),
+      'acct',
+      { requireActive: false },
+    )
+    expect(config!.baseUrl).toBe('https://api.groq.com/openai/v1')
   })
 })

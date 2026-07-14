@@ -8,7 +8,8 @@ import {
   type ProviderArgs,
 } from './shared'
 
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
+// Same `baseUrl` + '/messages' convention as openai.ts's OPENAI_DEFAULT_BASE_URL.
+const ANTHROPIC_DEFAULT_BASE_URL = 'https://api.anthropic.com/v1'
 const ANTHROPIC_VERSION = '2023-06-01'
 
 interface AnthropicResponse {
@@ -40,11 +41,12 @@ function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
  * in `generateReply`).
  */
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs } = args
+  const { apiKey, model, baseUrl, systemPrompt, messages, timeoutMs } = args
+  const url = `${(baseUrl?.trim().replace(/\/+$/, '')) || ANTHROPIC_DEFAULT_BASE_URL}/messages`
 
   let res: Response
   try {
-    res = await fetch(ANTHROPIC_URL, {
+    res = await fetch(url, {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,

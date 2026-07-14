@@ -7,6 +7,10 @@ import { AiError, type AiUsage, type ChatMessage } from '../types'
 export interface ProviderArgs {
   apiKey: string
   model: string
+  /** Optional override for the provider's base URL — see
+   *  `AiConfig.baseUrl`. Undefined/null means "use the real
+   *  provider URL". */
+  baseUrl?: string | null
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number

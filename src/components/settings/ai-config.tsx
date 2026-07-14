@@ -61,6 +61,7 @@ export function AiConfig() {
   const [configured, setConfigured] = useState(false);
   const [provider, setProvider] = useState<AiProvider>('openai');
   const [model, setModel] = useState(AI_PROVIDER_DEFAULT_MODEL.openai);
+  const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [keyEdited, setKeyEdited] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -95,6 +96,7 @@ export function AiConfig() {
         setConfigured(true);
         setProvider(data.provider);
         setModel(data.model);
+        setBaseUrl(data.base_url ?? '');
         setSystemPrompt(data.system_prompt ?? '');
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
@@ -144,6 +146,7 @@ export function AiConfig() {
   const buildBody = () => ({
     provider,
     model: model.trim(),
+    base_url: baseUrl.trim() || null,
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
@@ -162,6 +165,7 @@ export function AiConfig() {
         body: JSON.stringify({
           provider,
           model: model.trim(),
+          base_url: baseUrl.trim() || null,
           api_key: keyPayload(),
         }),
       });
@@ -215,6 +219,7 @@ export function AiConfig() {
         setHasStoredKey(false);
         setApiKey('');
         setKeyEdited(false);
+        setBaseUrl('');
         setIsActive(false);
         setAutoReplyEnabled(false);
         setSystemPrompt('');
@@ -345,6 +350,26 @@ export function AiConfig() {
                   {t('testKey')}
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-base-url">
+                {t('customEndpoint')}{' '}
+                <span className="font-normal text-muted-foreground">
+                  {t('optional')}
+                </span>
+              </Label>
+              <Input
+                id="ai-base-url"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.groq.com/openai/v1"
+                disabled={disabled}
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('customEndpointHint')}
+              </p>
             </div>
 
             <div className="space-y-2">
