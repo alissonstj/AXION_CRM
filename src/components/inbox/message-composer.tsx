@@ -22,6 +22,8 @@ import {
   Plus,
   MessageSquareDashed,
   Zap,
+  CalendarClock,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -55,6 +57,8 @@ import {
 import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
+import { ScheduleMessageModal } from "@/components/scheduling/schedule-message-modal";
+import { ScheduledMessagesListModal } from "@/components/scheduling/scheduled-messages-list-modal";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -154,6 +158,8 @@ export function MessageComposer({
     useState<InteractiveMessagePayload>(blankButtonsPayload);
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledListOpen, setScheduledListOpen] = useState(false);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -715,6 +721,14 @@ export function MessageComposer({
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setScheduleOpen(true)}>
+                <CalendarClock className="mr-2 h-4 w-4" />
+                {t("scheduleMessage")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setScheduledListOpen(true)}>
+                <CalendarDays className="mr-2 h-4 w-4" />
+                {t("scheduledMessages")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -831,6 +845,17 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+      />
+
+      <ScheduleMessageModal
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        conversationId={conversationId}
+      />
+      <ScheduledMessagesListModal
+        open={scheduledListOpen}
+        onOpenChange={setScheduledListOpen}
+        conversationId={conversationId}
       />
     </div>
   );

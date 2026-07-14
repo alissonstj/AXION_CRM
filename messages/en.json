@@ -198,6 +198,8 @@
       "interactiveMessage": "Interactive message",
       "quickReplies": "Quick replies",
       "quickRepliesEmpty": "No quick replies yet. Add some in Settings → Quick replies.",
+      "scheduleMessage": "Schedule message",
+      "scheduledMessages": "Scheduled messages",
       "saveAsQuickReply": "Save as quick reply",
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
