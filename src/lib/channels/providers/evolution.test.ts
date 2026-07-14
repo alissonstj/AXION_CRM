@@ -137,6 +137,16 @@ describe('EvolutionProvider.sender', () => {
       provider.sender.sendReaction({ to: '5511999999999', targetProviderMessageId: 'x', targetFromMe: false, emoji: '👍' }),
     ).rejects.toThrow('Evolution API error: 404');
   });
+
+  it('markAsRead builds remoteJid from `to` and always sends fromMe: false', async () => {
+    const spy = vi.spyOn(evolutionApi, 'markEvolutionMessageAsRead').mockResolvedValue(undefined);
+    const provider = new EvolutionProvider(config);
+    await provider.sender.markAsRead({ to: '5511999999999', providerMessageId: 'MSG-ID' });
+    expect(spy).toHaveBeenCalledWith({
+      baseUrl: 'http://evo.local', apiKey: 'instance-token', instanceName: 'axion-acc1',
+      remoteJid: '5511999999999@s.whatsapp.net', messageId: 'MSG-ID',
+    });
+  });
 });
 
 describe('EvolutionProvider lifecycle', () => {

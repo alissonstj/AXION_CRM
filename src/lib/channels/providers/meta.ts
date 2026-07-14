@@ -4,6 +4,7 @@ import {
   sendInteractiveButtons,
   sendInteractiveList,
   sendReactionMessage,
+  markMessageAsRead,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils';
@@ -13,6 +14,7 @@ import type {
   ChannelSender,
   ConnectionState,
   InboundKind,
+  MarkAsReadArgs,
   NormalizedInbound,
   OutboundResult,
   SendInteractiveButtonsArgs,
@@ -103,6 +105,13 @@ export class MetaProvider implements ChannelProvider {
             targetMessageId: args.targetProviderMessageId, emoji: args.emoji,
           }),
         ),
+      // No phone-variant retry — a read receipt doesn't fail with
+      // Meta's "recipient not allowed" error the way an initiated send
+      // can, and `to` isn't even part of the Cloud API's mark-as-read
+      // call (only the message id is).
+      markAsRead: async (args: MarkAsReadArgs): Promise<void> => {
+        await markMessageAsRead({ phoneNumberId, accessToken, messageId: args.providerMessageId });
+      },
     };
   }
 

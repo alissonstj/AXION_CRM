@@ -6,6 +6,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
   sendInteractiveButtons: vi.fn(),
   sendInteractiveList: vi.fn(),
   sendReactionMessage: vi.fn(),
+  markMessageAsRead: vi.fn(),
   verifyPhoneNumber: vi.fn(),
 }));
 
@@ -13,6 +14,7 @@ import {
   sendTextMessage,
   sendMediaMessage,
   sendReactionMessage,
+  markMessageAsRead,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { MetaProvider } from './meta';
@@ -98,6 +100,15 @@ describe('MetaProvider.sender', () => {
 
     expect(sendReactionMessage).toHaveBeenCalledTimes(2);
     expect(result.providerMessageId).toBe('wamid.5');
+  });
+
+  it('markAsRead forwards providerMessageId as messageId, ignores `to`', async () => {
+    vi.mocked(markMessageAsRead).mockResolvedValue(undefined);
+    const provider = new MetaProvider(cfg);
+    await provider.sender.markAsRead({ to: '+15551234567', providerMessageId: 'wamid.customer-msg' });
+    expect(markMessageAsRead).toHaveBeenCalledWith({
+      phoneNumberId: 'PNID', accessToken: 'TOKEN', messageId: 'wamid.customer-msg',
+    });
   });
 });
 

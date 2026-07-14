@@ -80,6 +80,18 @@ export interface SendInteractiveListArgs {
   contextProviderMessageId?: string;
 }
 
+export interface MarkAsReadArgs {
+  /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
+  to: string;
+  /** A mensagem mais recente do contato nesta conversa — o WhatsApp
+   *  marca essa e todas as anteriores no mesmo chat como lidas
+   *  (semântica padrão de recibo de leitura, não é preciso marcar
+   *  mensagem por mensagem). Sempre uma mensagem do contato
+   *  (`fromMe: false` implícito) — não faz sentido marcar como lida
+   *  uma mensagem que nós mesmos enviamos. */
+  providerMessageId: string;
+}
+
 export interface SendReactionArgs {
   /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
   to: string;
@@ -102,6 +114,9 @@ export interface ChannelSender {
   sendInteractiveButtons(args: SendInteractiveButtonsArgs): Promise<OutboundResult>;
   sendInteractiveList(args: SendInteractiveListArgs): Promise<OutboundResult>;
   sendReaction(args: SendReactionArgs): Promise<OutboundResult>;
+  /** Sends a read receipt — no new message is created, so there's no
+   *  `OutboundResult`/providerMessageId to return. */
+  markAsRead(args: MarkAsReadArgs): Promise<void>;
 }
 
 export type InboundKind =
