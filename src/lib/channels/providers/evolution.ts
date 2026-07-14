@@ -6,6 +6,7 @@ import {
   logoutEvolutionInstance,
   deleteEvolutionInstance,
   markEvolutionMessageAsRead,
+  sendEvolutionPresence,
   type EvolutionMediaType,
   type EvolutionQuotedRef,
 } from '@/lib/whatsapp/evolution-api';
@@ -23,6 +24,7 @@ import type {
   SendMediaArgs,
   SendReactionArgs,
   SendTextArgs,
+  SendTypingArgs,
 } from '../types';
 
 export interface EvolutionProviderConfig {
@@ -123,6 +125,17 @@ export class EvolutionProvider implements ChannelProvider {
           baseUrl, apiKey, instanceName,
           remoteJid: `${args.to}@s.whatsapp.net`,
           messageId: args.providerMessageId,
+        });
+      },
+      // contextProviderMessageId is Meta-only (see SendTypingArgs) —
+      // Evolution's presence update is chat-scoped, no message to
+      // attach to. sendEvolutionPresence itself blocks for `delay` ms
+      // before auto-reverting to 'paused', which is what satisfies the
+      // "resolves after durationMs" contract here.
+      sendTyping: async (args: SendTypingArgs): Promise<void> => {
+        await sendEvolutionPresence({
+          baseUrl, apiKey, instanceName, to: args.to,
+          presence: 'composing', delay: args.durationMs,
         });
       },
     };

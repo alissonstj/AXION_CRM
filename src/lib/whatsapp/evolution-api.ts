@@ -236,6 +236,37 @@ export async function markEvolutionMessageAsRead(args: MarkEvolutionAsReadArgs):
   if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
 }
 
+export type EvolutionPresence = 'unavailable' | 'available' | 'composing' | 'recording' | 'paused';
+
+export interface SendEvolutionPresenceArgs extends EvolutionAuth {
+  instanceName: string;
+  /** Bare number — same convention as sendText's `to`. */
+  to: string;
+  presence: EvolutionPresence;
+  /** Milliseconds. Confirmed against the upstream service
+   *  (whatsapp.baileys.service.ts): the server sends `presence`
+   *  immediately, blocks for exactly `delay` ms, then automatically
+   *  reverts to 'paused' and only THEN responds — this call is the
+   *  timer, there's no separate "stop typing" request. */
+  delay: number;
+}
+
+/** POST /chat/sendPresence/{instance}. Body/behavior confirmed against
+ *  the upstream source (chat.schema.ts's presenceSchema requires
+ *  number+presence+delay; whatsapp.baileys.service.ts's sendPresence
+ *  awaits `delay` ms before auto-reverting to 'paused') — not
+ *  independently live-verified against a real instance this session,
+ *  same confidence tier as sendEvolutionButtons/List. */
+export async function sendEvolutionPresence(args: SendEvolutionPresenceArgs): Promise<void> {
+  const { baseUrl, apiKey, instanceName, to, presence, delay } = args;
+  const response = await fetch(`${baseUrl}/chat/sendPresence/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({ number: to, presence, delay }),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+}
+
 export interface FetchEvolutionProfilePictureArgs extends EvolutionAuth {
   instanceName: string;
   /** Bare number, same convention as sendText's `to` — Evolution builds

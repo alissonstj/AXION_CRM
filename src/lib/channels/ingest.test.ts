@@ -110,6 +110,20 @@ describe('ingestInbound', () => {
     expect(inserts.messages[0]).toMatchObject({ content_type: 'text', content_text: 'oi', sender_type: 'customer' });
   });
 
+  it('passes the inbound providerMessageId to dispatchInboundToAiReply as triggeringProviderMessageId', async () => {
+    vi.mocked(dispatchInboundToAiReply).mockClear();
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.trigger-1',
+        timestamp: new Date(), kind: 'text', text: 'oi' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(dispatchInboundToAiReply).toHaveBeenCalledWith(
+      expect.objectContaining({ triggeringProviderMessageId: 'wamid.trigger-1' }),
+    );
+  });
+
   it('fires onContactCreated with the new contact row when a contact is actually created', async () => {
     const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
     const db = makeFakeDb(inserts);

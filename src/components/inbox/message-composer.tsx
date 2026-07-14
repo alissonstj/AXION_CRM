@@ -220,6 +220,24 @@ export function MessageComposer({
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
   }, []);
 
+  // Throttled "digitando…" ping to the lead's WhatsApp. The typing
+  // route's own indicator lasts ~5.5s server-side (TYPING_DURATION_MS
+  // in the route), so re-firing at most once every 4s while the agent
+  // keeps typing keeps it continuously visible without pinging on every
+  // keystroke. No shared debounce/throttle util exists in this codebase
+  // yet — kept local since this is the only caller (YAGNI).
+  const lastTypingPingRef = useRef(0);
+  const pingTyping = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingPingRef.current < 4000) return;
+    lastTypingPingRef.current = now;
+    fetch("/api/whatsapp/typing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }).catch(() => {});
+  }, [conversationId]);
+
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed || sending || sessionExpired) return;
@@ -250,8 +268,11 @@ export function MessageComposer({
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setText(e.target.value);
       adjustHeight();
+      if (e.target.value.trim() && !inputsDisabled) {
+        pingTyping();
+      }
     },
-    [adjustHeight]
+    [adjustHeight, inputsDisabled, pingTyping]
   );
 
   // Ask the AI assistant for a suggested reply and drop it into the

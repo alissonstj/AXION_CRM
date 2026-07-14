@@ -113,6 +113,26 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     )
   })
 
+  it('asks engineSendText to simulate typing for 4-5s and passes the triggering wamid as context', async () => {
+    await dispatchInboundToAiReply({ ...ARGS, triggeringProviderMessageId: 'wamid.customer-trigger' })
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextProviderMessageId: 'wamid.customer-trigger',
+        simulateTypingMs: expect.any(Number),
+      }),
+    )
+    const { simulateTypingMs } = h.engineSendText.mock.calls[0][0]
+    expect(simulateTypingMs).toBeGreaterThanOrEqual(4000)
+    expect(simulateTypingMs).toBeLessThan(5000)
+  })
+
+  it('passes contextProviderMessageId: undefined when the caller has no triggering wamid handy', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ contextProviderMessageId: undefined }),
+    )
+  })
+
   it('grounds the reply in retrieved knowledge', async () => {
     h.retrieveKnowledge.mockResolvedValue(['Returns accepted within 30 days.'])
     await dispatchInboundToAiReply(ARGS)

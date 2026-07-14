@@ -18,6 +18,21 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** The customer's inbound message that triggered this reply — passed
+   *  through to `engineSendText` so the Meta provider has something to
+   *  attach its typing indicator to (see SendTypingArgs). Optional:
+   *  absent for any caller that doesn't have it handy, in which case
+   *  the typing indicator just no-ops on Meta (Evolution is unaffected,
+   *  its presence update is chat-scoped). */
+  triggeringProviderMessageId?: string
+}
+
+/** Random delay in [4000, 5000) ms before the AI's reply is actually
+ *  sent — simulates human typing latency rather than an instant reply.
+ *  Randomized (not fixed) so it doesn't read as an obviously robotic,
+ *  identical-every-time pause. */
+function simulatedTypingDelayMs(): number {
+  return 4000 + Math.floor(Math.random() * 1000)
 }
 
 /**
@@ -42,7 +57,7 @@ interface DispatchArgs {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId } = args
+  const { accountId, conversationId, contactId, configOwnerUserId, triggeringProviderMessageId } = args
 
   try {
     const db = supabaseAdmin()
@@ -186,6 +201,8 @@ export async function dispatchInboundToAiReply(
       contactId,
       text,
       aiGenerated: true,
+      simulateTypingMs: simulatedTypingDelayMs(),
+      contextProviderMessageId: triggeringProviderMessageId,
     })
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
