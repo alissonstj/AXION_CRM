@@ -6,11 +6,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // = vi.fn()` read directly inside the factory below hits the TDZ.
 // `vi.hoisted()` runs its initializer as part of that same hoisting
 // phase, so the value exists by the time the factory needs it.
-const { mockIngestInbound, mockDecrypt, mockDispatchWebhookEvent, mockFetchProfilePicture } = vi.hoisted(() => ({
+const { mockIngestInbound, mockDecrypt, mockDispatchWebhookEvent, mockFetchProfilePicture, mockWasSentByCrm } = vi.hoisted(() => ({
   mockIngestInbound: vi.fn().mockResolvedValue(undefined),
   mockDecrypt: vi.fn((v: string) => v.replace('enc:', '')),
   mockDispatchWebhookEvent: vi.fn().mockResolvedValue(undefined),
   mockFetchProfilePicture: vi.fn().mockResolvedValue(null),
+  mockWasSentByCrm: vi.fn().mockReturnValue(false),
 }));
 vi.mock('@/lib/channels/ingest', () => ({ ingestInbound: mockIngestInbound }));
 vi.mock('@/lib/channels/evolution-media', () => ({
@@ -18,6 +19,7 @@ vi.mock('@/lib/channels/evolution-media', () => ({
 }));
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: mockDispatchWebhookEvent }));
 vi.mock('@/lib/whatsapp/evolution-api', () => ({ fetchEvolutionProfilePicture: mockFetchProfilePicture }));
+vi.mock('@/lib/channels/sent-by-crm-cache', () => ({ wasSentByCrm: mockWasSentByCrm }));
 
 let mockConfigRow: Record<string, unknown> | null;
 let mockMessageRow: Record<string, unknown> | null;
@@ -59,6 +61,7 @@ beforeEach(() => {
   mockDecrypt.mockClear();
   mockDispatchWebhookEvent.mockClear();
   mockFetchProfilePicture.mockReset().mockResolvedValue(null);
+  mockWasSentByCrm.mockReset().mockReturnValue(false);
   mockDecrypt.mockImplementation((v: string) => v.replace('enc:', ''));
   mockConfigRow = {
     account_id: 'acc-1', user_id: 'user-1',
@@ -76,7 +79,7 @@ beforeEach(() => {
 vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: mockDecrypt }));
 
 import { POST } from './route';
-import { TEXT_INBOUND_SAMPLE } from '@/lib/channels/providers/__fixtures__/evolution-webhook-samples';
+import { TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE } from '@/lib/channels/providers/__fixtures__/evolution-webhook-samples';
 
 function req(body: unknown) {
   return new Request('http://localhost/api/channels/evolution/webhook', {
@@ -251,5 +254,33 @@ describe('POST /api/channels/evolution/webhook — avatar sync on new contact', 
       expect(mockFetchProfilePicture).toHaveBeenCalled();
     });
     expect(lastContactUpdate).toBeNull();
+  });
+});
+
+describe('POST /api/channels/evolution/webhook — fromMe: true (CRM echo vs phone-sent split)', () => {
+  it('drops it without ingesting when the in-memory CRM-send marker matches (fast path)', async () => {
+    mockWasSentByCrm.mockReturnValue(true);
+    const res = await POST(req({ ...FROM_ME_ECHO_SAMPLE, apikey: 'tok' }));
+    expect(res.status).toBe(200);
+    expect(mockIngestInbound).not.toHaveBeenCalled();
+  });
+
+  it('drops it without ingesting when the marker misses but a message row already exists (DB fallback)', async () => {
+    mockWasSentByCrm.mockReturnValue(false);
+    mockMessageRow = { id: 'existing-msg', conversations: { account_id: 'acc-1' } };
+    const res = await POST(req({ ...FROM_ME_ECHO_SAMPLE, apikey: 'tok' }));
+    expect(res.status).toBe(200);
+    expect(mockIngestInbound).not.toHaveBeenCalled();
+  });
+
+  it('ingests it as a genuine phone-sent message when neither the marker nor the DB knows about it', async () => {
+    mockWasSentByCrm.mockReturnValue(false);
+    mockMessageRow = null;
+    const res = await POST(req({ ...FROM_ME_ECHO_SAMPLE, apikey: 'tok' }));
+    expect(res.status).toBe(200);
+    expect(mockIngestInbound).toHaveBeenCalledWith(
+      expect.objectContaining({ fromMe: true }),
+      expect.objectContaining({ accountId: 'acc-1', configOwnerUserId: 'user-1' }),
+    );
   });
 });

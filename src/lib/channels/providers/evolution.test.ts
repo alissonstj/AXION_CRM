@@ -256,8 +256,14 @@ describe('EvolutionProvider.parseWebhook', () => {
     });
   });
 
-  it('drops fromMe echoes entirely', () => {
-    expect(provider.parseWebhook(FROM_ME_ECHO_SAMPLE)).toEqual([]);
+  it('tags fromMe messages instead of dropping them — the CRM-echo vs phone-send split happens in the webhook route, not here', () => {
+    const [inbound] = provider.parseWebhook(FROM_ME_ECHO_SAMPLE);
+    expect(inbound).toMatchObject({ fromMe: true, kind: 'text' });
+  });
+
+  it('sets fromMe: false (not undefined) for a genuine customer inbound', () => {
+    const [inbound] = provider.parseWebhook(TEXT_INBOUND_SAMPLE);
+    expect(inbound.fromMe).toBe(false);
   });
 
   it('drops group messages entirely', () => {

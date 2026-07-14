@@ -7,6 +7,7 @@ import { uploadEvolutionMedia } from '@/lib/channels/evolution-media';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 import { fetchEvolutionProfilePicture } from '@/lib/whatsapp/evolution-api';
+import { wasSentByCrm } from '@/lib/channels/sent-by-crm-cache';
 
 interface EvolutionWebhookPayload {
   event: string;
@@ -127,6 +128,34 @@ async function handleEvolutionStatusUpdate(
   }
 }
 
+/**
+ * A `fromMe: true` inbound is either an echo of a message the CRM
+ * itself just sent, or a message sent directly from the linked phone.
+ * The fast path checks the in-memory marker `EvolutionProvider.sender`
+ * writes the instant it gets a `providerMessageId` back (see
+ * sent-by-crm-cache.ts); the DB fallback covers the case where the
+ * webhook echo's `messages.upsert` event somehow wins the race against
+ * our own `messages` insert in send-message.ts, still before the
+ * marker was set or after it expired.
+ */
+async function isKnownCrmEcho(
+  db: SupabaseClient,
+  accountId: string,
+  providerMessageId: string,
+): Promise<boolean> {
+  if (wasSentByCrm(providerMessageId)) return true;
+
+  const { data } = await db
+    .from('messages')
+    .select('id, conversations!inner(account_id)')
+    .eq('message_id', providerMessageId)
+    .eq('conversations.account_id', accountId)
+    .limit(1)
+    .maybeSingle();
+
+  return !!data;
+}
+
 export async function POST(request: Request) {
   let body: EvolutionWebhookPayload;
   try {
@@ -213,6 +242,16 @@ export async function POST(request: Request) {
       };
 
       for (const inbound of inbounds) {
+        // fromMe: true is either an echo of our own CRM send, or a
+        // message sent directly from the linked phone — see
+        // isKnownCrmEcho's doc comment. Only the former gets dropped
+        // here; the latter falls through to ingestInbound below, which
+        // records it with sender_type: 'agent' and skips the customer-
+        // facing automation/flow/AI dispatch (see ingest.ts).
+        if (inbound.fromMe && (await isKnownCrmEcho(db, config.account_id, inbound.providerMessageId))) {
+          continue;
+        }
+
         // Media resolution stays here — provider-specific, mirrors how
         // the Meta webhook route verifies media before calling
         // ingestInbound (see src/app/api/whatsapp/webhook/route.ts).
