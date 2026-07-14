@@ -17,9 +17,21 @@ const EXT_BY_MIME: Record<string, string> = {
   'application/pdf': 'pdf',
 };
 
+// Evolution's webhook sends the full Content-Type, parameters and all
+// (e.g. 'audio/ogg; codecs=opus' for every voice note — confirmed live
+// in Phase 2). Supabase Storage's bucket-level `allowed_mime_types`
+// (migration 023) only lists bare types ('audio/ogg'), and rejects an
+// upload whose Content-Type doesn't match one of those entries
+// EXACTLY — 'audio/ogg; codecs=opus' fails that check even though
+// 'audio/ogg' is allowed. Strip params before using the value for
+// anything Storage-facing.
+function baseMimeType(mimeType: string | null | undefined): string | undefined {
+  return mimeType?.split(';')[0].trim() || undefined;
+}
+
 function extensionFor(mimeType: string | null | undefined, fileName?: string | null): string {
   if (fileName && /\.[^.]+$/.test(fileName)) return fileName.split('.').pop()!.toLowerCase();
-  const base = mimeType?.split(';')[0].trim();
+  const base = baseMimeType(mimeType);
   return (base && EXT_BY_MIME[base]) || 'bin';
 }
 
@@ -51,7 +63,7 @@ export async function uploadEvolutionMedia(
     const { error } = await db.storage.from(BUCKET).upload(path, buffer, {
       cacheControl: '3600',
       upsert: false,
-      contentType: mimeType ?? 'application/octet-stream',
+      contentType: baseMimeType(mimeType) ?? 'application/octet-stream',
     });
     if (error) {
       console.error('[evolution-media] upload failed:', error.message ?? error);

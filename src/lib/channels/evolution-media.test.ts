@@ -24,6 +24,24 @@ describe('uploadEvolutionMedia', () => {
     expect(opts).toMatchObject({ contentType: 'image/jpeg' });
   });
 
+  it('strips codec parameters before passing contentType to Storage — the real "audio/ogg; codecs=opus is not supported" bug', async () => {
+    // Evolution's real webhook mimetype for every voice note (confirmed
+    // live in Phase 2). The chat-media bucket's allowed_mime_types only
+    // lists the bare 'audio/ogg' (migration 023) and Storage rejects an
+    // exact-match failure — this pinned a real production bug where every
+    // inbound Evolution voice note failed to upload and showed as
+    // "unavailable" in the inbox.
+    const db = dbWithStorage();
+    const url = await uploadEvolutionMedia(db, {
+      accountId: 'acc-1', base64: Buffer.from('audio-bytes').toString('base64'),
+      mimeType: 'audio/ogg; codecs=opus', providerMessageId: 'MSG3',
+    });
+    expect(url).not.toBeNull();
+    const [path, , opts] = db._upload.mock.calls[0];
+    expect(opts).toMatchObject({ contentType: 'audio/ogg' });
+    expect(path).toMatch(/\.ogg$/);
+  });
+
   it('returns null and does not throw when the upload fails', async () => {
     const db = dbWithStorage();
     (db as unknown as { _upload: ReturnType<typeof vi.fn> })._upload.mockResolvedValueOnce({ error: { message: 'quota' } });
