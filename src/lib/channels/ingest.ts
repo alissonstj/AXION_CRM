@@ -56,6 +56,11 @@ export async function ingestInbound(
 
   const senderPhone = normalizePhone(inbound.from)
   const contactName = inbound.contactName ?? ''
+  // See NormalizedInbound.fromMe's doc comment: by the time an inbound
+  // reaches here, `fromMe: true` unambiguously means "sent from the
+  // linked phone directly, outside the CRM" — CRM-originated echoes were
+  // already filtered out by the caller (sent-by-crm-cache.ts).
+  const isFromMe = inbound.fromMe === true
 
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
@@ -100,7 +105,7 @@ export async function ingestInbound(
   // Reactions short-circuit here — they aren't messages. We never insert
   // into `messages`, never bump unread_count, never update last_message_text.
   if (inbound.kind === 'reaction') {
-    await handleReaction(db, inbound, conversation.id, contactRecord.id)
+    await handleReaction(db, inbound, conversation.id, contactRecord.id, isFromMe ? configOwnerUserId : null)
     return
   }
 
@@ -154,12 +159,15 @@ export async function ingestInbound(
   //   media_url, template_name, message_id, status, created_at
   const { error: msgError } = await db.from('messages').insert({
     conversation_id: conversation.id,
-    sender_type: 'customer',
+    // A phone-sent message (isFromMe) is ours, same as a CRM send —
+    // record it as 'agent'/'sent', matching send-message.ts's own insert
+    // shape, not as a customer message.
+    sender_type: isFromMe ? 'agent' : 'customer',
     content_type: contentType,
     content_text: contentText,
     media_url: mediaUrl,
     message_id: inbound.providerMessageId,
-    status: 'delivered',
+    status: isFromMe ? 'sent' : 'delivered',
     created_at: inbound.timestamp.toISOString(),
     reply_to_message_id: replyToInternalId,
     // Only populated for content_type='interactive'. Migration 010 added
@@ -179,7 +187,8 @@ export async function ingestInbound(
     .update({
       last_message_text: contentText || `[${inbound.kind}]`,
       last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
+      // A phone-sent message doesn't need to notify us of itself.
+      unread_count: isFromMe ? (conversation.unread_count || 0) : (conversation.unread_count || 0) + 1,
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id)
@@ -187,6 +196,14 @@ export async function ingestInbound(
   if (convError) {
     console.error('Error updating conversation:', convError)
   }
+
+  // Everything below this point (broadcast-reply flagging, the flow
+  // runner, automations, AI auto-reply, and the message.received public
+  // webhook) reacts to something a CUSTOMER sent us. A phone-sent
+  // message is our own outbound content arriving via a side channel —
+  // it still needs to land in the inbox (done above), but must not
+  // trigger any of the customer-facing dispatch logic.
+  if (isFromMe) return
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
@@ -342,12 +359,19 @@ async function lookupInternalIdByMetaId(
  *
  * Best-effort: a missing parent (we never received it) is logged and
  * skipped so the webhook still acks 200 to the provider.
+ *
+ * `phoneActorUserId` is set only for a reaction added from the linked
+ * phone directly (isFromMe in the caller) — there's no real CRM user to
+ * attribute it to (any teammate could be holding that phone), so we
+ * fall back to the whatsapp_config owner as a stable actor id, the same
+ * convention findOrCreateContact uses for auto-created contacts.
  */
 async function handleReaction(
   db: SupabaseClient,
   inbound: NormalizedInbound,
   conversationId: string,
-  contactId: string
+  contactId: string,
+  phoneActorUserId: string | null
 ) {
   const reaction = inbound.reaction
   if (!reaction?.targetProviderMessageId) return
@@ -365,14 +389,17 @@ async function handleReaction(
     return
   }
 
+  const actorType = phoneActorUserId ? 'agent' : 'customer'
+  const actorId = phoneActorUserId ?? contactId
+
   // Empty emoji = removal (per Meta's Cloud API spec).
   if (!reaction.emoji) {
     const { error: delError } = await db
       .from('message_reactions')
       .delete()
       .eq('message_id', targetInternalId)
-      .eq('actor_type', 'customer')
-      .eq('actor_id', contactId)
+      .eq('actor_type', actorType)
+      .eq('actor_id', actorId)
     if (delError) {
       console.error('[ingest] reaction delete failed:', delError.message)
     }
@@ -385,8 +412,8 @@ async function handleReaction(
       {
         message_id: targetInternalId,
         conversation_id: conversationId,
-        actor_type: 'customer',
-        actor_id: contactId,
+        actor_type: actorType,
+        actor_id: actorId,
         emoji: reaction.emoji,
       },
       { onConflict: 'message_id,actor_type,actor_id' }

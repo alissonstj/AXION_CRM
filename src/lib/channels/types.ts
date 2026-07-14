@@ -143,6 +143,14 @@ export interface NormalizedInbound {
   interactiveReplyId?: string | null;
   reaction?: { targetProviderMessageId: string; emoji: string } | null;
   replyToProviderMessageId?: string | null;
+  /** True when the provider's own webhook marked this as sent by our
+   *  connected number (Baileys `key.fromMe` on Evolution; Meta's Cloud
+   *  API webhook has no such concept and never sets this). By the time
+   *  `ingestInbound` sees a `fromMe: true` inbound, the caller has
+   *  already ruled out "this is an echo of our own CRM-originated send"
+   *  (see sent-by-crm-cache.ts) — so here it unambiguously means a
+   *  message sent from the linked phone directly, outside the CRM. */
+  fromMe?: boolean;
 }
 
 export interface ConnectionState {

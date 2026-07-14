@@ -14,6 +14,10 @@ vi.mock('@/lib/contacts/dedupe', () => ({
 
 import { ingestInbound } from './ingest';
 import { findExistingContact } from '@/lib/contacts/dedupe';
+import { runAutomationsForTrigger } from '@/lib/automations/engine';
+import { dispatchInboundToFlows } from '@/lib/flows/engine';
+import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
+import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 
 // ------------------------------------------------------------
 // Chainable Supabase stub, scripted per table — same shape as
@@ -30,7 +34,10 @@ import { findExistingContact } from '@/lib/contacts/dedupe';
 //   - broadcast_recipients: empty list, so flagBroadcastReplyIfAny is a
 //     no-op.
 // ------------------------------------------------------------
-function makeFakeDb(inserts: Record<string, unknown[]>): SupabaseClient {
+function makeFakeDb(
+  inserts: Record<string, unknown[]>,
+  updates: Record<string, unknown[]> = {},
+): SupabaseClient {
   let table = '';
   let mode: 'select' | 'insert' | 'update' | 'delete' = 'select';
   let pendingInsert: Record<string, unknown> | null = null;
@@ -43,8 +50,16 @@ function makeFakeDb(inserts: Record<string, unknown[]>): SupabaseClient {
       inserts[table]?.push(row);
       return builder;
     },
-    update: () => {
+    // Only message_reactions upserts in this file's exercised paths;
+    // awaited directly (no further .select().single() chain), so it
+    // resolves to a Promise rather than returning `builder`.
+    upsert: (row: Record<string, unknown>) => {
+      inserts[table]?.push(row);
+      return Promise.resolve({ data: null, error: null });
+    },
+    update: (row: Record<string, unknown>) => {
       mode = 'update';
+      updates[table]?.push(row);
       return builder;
     },
     delete: () => {
@@ -137,5 +152,137 @@ describe('ingestInbound', () => {
       ),
     ).resolves.toBeUndefined();
     expect(inserts.messages).toHaveLength(1);
+  });
+
+  // ------------------------------------------------------------
+  // fromMe: true — a message sent from the linked phone directly (the
+  // caller has already ruled out "this is our own CRM-send echo" before
+  // it reaches ingestInbound; see sent-by-crm-cache.ts /
+  // isKnownCrmEcho in the Evolution webhook route).
+  // ------------------------------------------------------------
+  describe('fromMe: true (phone-sent message)', () => {
+    it('records it as sender_type agent / status sent, not a customer message', async () => {
+      const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+      const db = makeFakeDb(inserts);
+      await ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.phone1',
+          timestamp: new Date(), kind: 'text', text: 'respondido do celular', fromMe: true },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+      );
+      expect(inserts.messages).toHaveLength(1);
+      expect(inserts.messages[0]).toMatchObject({
+        content_text: 'respondido do celular', sender_type: 'agent', status: 'sent',
+      });
+    });
+
+    it('does not bump the conversation unread_count', async () => {
+      const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+      const updates: Record<string, unknown[]> = { conversations: [] };
+      const db = makeFakeDb(inserts, updates);
+      await ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.phone2',
+          timestamp: new Date(), kind: 'text', text: 'oi', fromMe: true },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+      );
+      expect(updates.conversations).toHaveLength(1);
+      expect(updates.conversations[0]).toMatchObject({ unread_count: 0 });
+    });
+
+    it('does not dispatch the flow runner, automations, AI auto-reply, or message.received', async () => {
+      vi.mocked(dispatchInboundToFlows).mockClear();
+      vi.mocked(runAutomationsForTrigger).mockClear();
+      vi.mocked(dispatchInboundToAiReply).mockClear();
+      vi.mocked(dispatchWebhookEvent).mockClear();
+
+      const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+      const db = makeFakeDb(inserts);
+      await ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.phone3',
+          timestamp: new Date(), kind: 'text', text: 'oi', fromMe: true },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+      );
+
+      expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+      expect(runAutomationsForTrigger).not.toHaveBeenCalled();
+      expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+      // conversation.created is still allowed to fire (a phone-sent
+      // message can open a brand-new thread) — only message.received
+      // must be suppressed.
+      expect(dispatchWebhookEvent).not.toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), 'message.received', expect.anything(),
+      );
+    });
+
+    it('still inserts the message even when a customer inbound would have', async () => {
+      // Regression guard: the isFromMe early-return must come AFTER the
+      // message insert + conversation update, not before — otherwise a
+      // phone-sent message silently never reaches the inbox at all.
+      const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+      const db = makeFakeDb(inserts);
+      await ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.phone4',
+          timestamp: new Date(), kind: 'text', text: 'oi', fromMe: true },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+      );
+      expect(inserts.messages).toHaveLength(1);
+    });
+
+    it('attributes a phone-added reaction to the config owner (actor_type agent), not the contact', async () => {
+      // Dedicated minimal stub rather than makeFakeDb: the reaction path
+      // only touches contacts/conversations (find-or-create, both via
+      // findExistingContact/existing-conversation branches below) and
+      // messages (lookupInternalIdByMetaId's select().eq().eq().maybeSingle()
+      // chain, which needs to resolve a target row) + message_reactions
+      // (the upsert this test asserts on).
+      vi.mocked(findExistingContact).mockResolvedValueOnce({
+        id: 'contact-1', phone: '15551234567', name: 'Ana',
+      } as never);
+      const inserts: Record<string, unknown[]> = { message_reactions: [] };
+      const db = {
+        from: (table: string) => {
+          if (table === 'conversations') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    order: () => ({ limit: () => Promise.resolve({ data: [{ id: 'conv-1', unread_count: 0 }], error: null }) }),
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'messages') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'target-msg-1' }, error: null }) }),
+                }),
+              }),
+            };
+          }
+          if (table === 'message_reactions') {
+            return {
+              upsert: (row: Record<string, unknown>) => {
+                inserts.message_reactions.push(row);
+                return Promise.resolve({ data: null, error: null });
+              },
+            };
+          }
+          throw new Error(`unexpected table in this test: ${table}`);
+        },
+      } as unknown as SupabaseClient;
+
+      await ingestInbound(
+        { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.reaction1',
+          timestamp: new Date(), kind: 'reaction', fromMe: true,
+          reaction: { targetProviderMessageId: 'wamid.target', emoji: '👍' } },
+        { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+      );
+
+      expect(inserts.message_reactions).toHaveLength(1);
+      expect(inserts.message_reactions[0]).toMatchObject({
+        actor_type: 'agent', actor_id: 'user-1', emoji: '👍',
+      });
+    });
   });
 });

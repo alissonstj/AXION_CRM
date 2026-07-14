@@ -9,6 +9,7 @@ import {
   type EvolutionMediaType,
   type EvolutionQuotedRef,
 } from '@/lib/whatsapp/evolution-api';
+import { markSentByCrm } from '../sent-by-crm-cache';
 import type {
   ChannelProvider,
   ChannelProviderId,
@@ -73,6 +74,7 @@ export class EvolutionProvider implements ChannelProvider {
           baseUrl, apiKey, instanceName, to: args.to, text: args.text,
           quoted: buildQuotedRef(args.to, args.contextProviderMessageId, args.contextFromMe),
         });
+        markSentByCrm(messageId);
         return { providerMessageId: messageId };
       },
       sendMedia: async (args: SendMediaArgs): Promise<OutboundResult> => {
@@ -82,6 +84,7 @@ export class EvolutionProvider implements ChannelProvider {
           media: args.link, caption: args.caption, fileName: args.filename,
           quoted: buildQuotedRef(args.to, args.contextProviderMessageId, args.contextFromMe),
         });
+        markSentByCrm(messageId);
         return { providerMessageId: messageId };
       },
       // Baileys button/list support is experimental and unvalidated
@@ -92,6 +95,7 @@ export class EvolutionProvider implements ChannelProvider {
           baseUrl, apiKey, instanceName, to: args.to, bodyText: args.bodyText,
           headerText: args.headerText, footerText: args.footerText, buttons: args.buttons,
         });
+        markSentByCrm(messageId);
         return { providerMessageId: messageId };
       },
       sendInteractiveList: async (args: SendInteractiveListArgs): Promise<OutboundResult> => {
@@ -100,6 +104,7 @@ export class EvolutionProvider implements ChannelProvider {
           buttonLabel: args.buttonLabel, headerText: args.headerText,
           footerText: args.footerText, sections: args.sections,
         });
+        markSentByCrm(messageId);
         return { providerMessageId: messageId };
       },
       // Same confidence tier as sendEvolutionButtons/sendEvolutionList
@@ -110,6 +115,7 @@ export class EvolutionProvider implements ChannelProvider {
           targetMessageId: args.targetProviderMessageId,
           targetFromMe: args.targetFromMe, emoji: args.emoji,
         });
+        markSentByCrm(messageId);
         return { providerMessageId: messageId };
       },
       markAsRead: async (args: MarkAsReadArgs): Promise<void> => {
@@ -127,10 +133,14 @@ export class EvolutionProvider implements ChannelProvider {
     if (!body || body.event !== 'messages.upsert' || !body.data) return [];
     const data = body.data;
 
-    // Never re-ingest our own sends, whether they came through this CRM
-    // or were sent directly from the linked phone (approved design
-    // decision — see design doc section 2, "parseWebhook").
-    if (data.key.fromMe) return [];
+    // `fromMe: true` covers two very different cases: an echo of a
+    // message the CRM itself just sent (via sendText/sendMedia/etc.),
+    // and a message actually sent from the linked phone directly,
+    // outside the CRM. Both look identical here — parseWebhook has no
+    // DB access to tell them apart. It passes `fromMe` through on the
+    // normalized shape and leaves the split to the webhook route (which
+    // checks the in-memory CRM-send marker + a DB fallback before
+    // deciding whether to ingest at all — see sent-by-crm-cache.ts).
 
     // Groups: remoteJid ends in @g.us and the real sender lives in
     // participant/participantAlt, not remoteJid — out of scope (design
@@ -264,6 +274,7 @@ function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | nul
     providerMessageId: data.key.id,
     timestamp: new Date(data.messageTimestamp * 1000),
     replyToProviderMessageId: data.contextInfo?.stanzaId ?? null,
+    fromMe: data.key.fromMe,
   };
   const m = data.message;
 
