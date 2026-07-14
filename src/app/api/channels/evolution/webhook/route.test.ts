@@ -6,26 +6,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // = vi.fn()` read directly inside the factory below hits the TDZ.
 // `vi.hoisted()` runs its initializer as part of that same hoisting
 // phase, so the value exists by the time the factory needs it.
-const { mockIngestInbound, mockDecrypt, mockDispatchWebhookEvent } = vi.hoisted(() => ({
+const { mockIngestInbound, mockDecrypt, mockDispatchWebhookEvent, mockFetchProfilePicture } = vi.hoisted(() => ({
   mockIngestInbound: vi.fn().mockResolvedValue(undefined),
   mockDecrypt: vi.fn((v: string) => v.replace('enc:', '')),
   mockDispatchWebhookEvent: vi.fn().mockResolvedValue(undefined),
+  mockFetchProfilePicture: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/channels/ingest', () => ({ ingestInbound: mockIngestInbound }));
 vi.mock('@/lib/channels/evolution-media', () => ({
   uploadEvolutionMedia: vi.fn().mockResolvedValue('https://cdn.local/chat-media/x.jpg'),
 }));
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: mockDispatchWebhookEvent }));
+vi.mock('@/lib/whatsapp/evolution-api', () => ({ fetchEvolutionProfilePicture: mockFetchProfilePicture }));
 
 let mockConfigRow: Record<string, unknown> | null;
 let mockMessageRow: Record<string, unknown> | null;
 let mockRecipientRow: Record<string, unknown> | null;
 let lastMessageUpdate: Record<string, unknown> | null;
 let lastRecipientUpdate: Record<string, unknown> | null;
+let lastContactUpdate: Record<string, unknown> | null;
 
 // Table-aware chainable stub. `whatsapp_config` keeps the original
 // single-config behavior; `messages`/`broadcast_recipients` are new,
-// added for the messages.update status-tick handling.
+// added for the messages.update status-tick handling; `contacts` is
+// new for the avatar-sync hook.
 function makeDb() {
   let lastTable = '';
   const chain: Record<string, unknown> = {
@@ -41,6 +45,7 @@ function makeDb() {
     update: (patch: Record<string, unknown>) => {
       if (lastTable === 'messages') lastMessageUpdate = patch;
       if (lastTable === 'broadcast_recipients') lastRecipientUpdate = patch;
+      if (lastTable === 'contacts') lastContactUpdate = patch;
       return { eq: async () => ({ error: null }) };
     },
   };
@@ -53,6 +58,7 @@ beforeEach(() => {
   mockIngestInbound.mockClear();
   mockDecrypt.mockClear();
   mockDispatchWebhookEvent.mockClear();
+  mockFetchProfilePicture.mockReset().mockResolvedValue(null);
   mockDecrypt.mockImplementation((v: string) => v.replace('enc:', ''));
   mockConfigRow = {
     account_id: 'acc-1', user_id: 'user-1',
@@ -62,6 +68,7 @@ beforeEach(() => {
   mockRecipientRow = null;
   lastMessageUpdate = null;
   lastRecipientUpdate = null;
+  lastContactUpdate = null;
 });
 
 // decrypt('enc:tok') must resolve to a plain token for the apikey check —
@@ -196,5 +203,53 @@ describe('POST /api/channels/evolution/webhook — messages.update (status ticks
       'message.status_updated',
       expect.objectContaining({ whatsapp_message_id: '3EB0C6810F1BA185D26B02', conversation_id: 'conv-1', status: 'delivered' }),
     );
+  });
+});
+
+describe('POST /api/channels/evolution/webhook — avatar sync on new contact', () => {
+  it('passes an onContactCreated hook to ingestInbound on messages.upsert', async () => {
+    await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
+    expect(mockIngestInbound).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ onContactCreated: expect.any(Function) }),
+    );
+  });
+
+  it('the hook fetches the photo and updates contacts.avatar_url when one exists', async () => {
+    mockFetchProfilePicture.mockResolvedValue('https://pps.whatsapp.net/real-photo.jpg');
+    await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
+    const { onContactCreated } = mockIngestInbound.mock.calls[0][1];
+    onContactCreated({ id: 'contact-1', phone: '5511900000002' });
+
+    await vi.waitFor(() => {
+      expect(mockFetchProfilePicture).toHaveBeenCalledWith(
+        expect.objectContaining({ number: '5511900000002' }),
+      );
+      expect(lastContactUpdate).toEqual({ avatar_url: 'https://pps.whatsapp.net/real-photo.jpg' });
+    });
+  });
+
+  it('the hook does not touch contacts when the contact has no photo (null, not an error)', async () => {
+    mockFetchProfilePicture.mockResolvedValue(null);
+    await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
+    const { onContactCreated } = mockIngestInbound.mock.calls[0][1];
+    onContactCreated({ id: 'contact-1', phone: '5511900000002' });
+
+    await vi.waitFor(() => {
+      expect(mockFetchProfilePicture).toHaveBeenCalled();
+    });
+    expect(lastContactUpdate).toBeNull();
+  });
+
+  it('a failed fetch is swallowed — never rejects, never surfaces', async () => {
+    mockFetchProfilePicture.mockRejectedValue(new Error('Evolution API error: 500'));
+    await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
+    const { onContactCreated } = mockIngestInbound.mock.calls[0][1];
+    expect(() => onContactCreated({ id: 'contact-1', phone: '5511900000002' })).not.toThrow();
+
+    await vi.waitFor(() => {
+      expect(mockFetchProfilePicture).toHaveBeenCalled();
+    });
+    expect(lastContactUpdate).toBeNull();
   });
 });

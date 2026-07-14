@@ -235,3 +235,29 @@ export async function markEvolutionMessageAsRead(args: MarkEvolutionAsReadArgs):
   });
   if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
 }
+
+export interface FetchEvolutionProfilePictureArgs extends EvolutionAuth {
+  instanceName: string;
+  /** Bare number, same convention as sendText's `to` — Evolution builds
+   *  the JID server-side. */
+  number: string;
+}
+
+/** POST /chat/fetchProfilePictureUrl/{instance}. Confirmed live
+ *  2026-07-14 against a real contact (returned a real photo URL) and
+ *  against a nonexistent/no-photo contact — the latter still returns
+ *  HTTP 200 with `profilePictureUrl: null`, not an error, so `null` is
+ *  a valid, expected result the caller must handle, not a failure. */
+export async function fetchEvolutionProfilePicture(
+  args: FetchEvolutionProfilePictureArgs,
+): Promise<string | null> {
+  const { baseUrl, apiKey, instanceName, number } = args;
+  const response = await fetch(`${baseUrl}/chat/fetchProfilePictureUrl/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({ number }),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+  const data = await response.json();
+  return data.profilePictureUrl ?? null;
+}

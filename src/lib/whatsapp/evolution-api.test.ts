@@ -7,6 +7,7 @@ import {
   sendEvolutionText,
   sendEvolutionMedia,
   markEvolutionMessageAsRead,
+  fetchEvolutionProfilePicture,
 } from './evolution-api';
 
 const BASE = { baseUrl: 'http://evo.local', apiKey: 'k' };
@@ -215,5 +216,35 @@ describe('markEvolutionMessageAsRead', () => {
     await expect(
       markEvolutionMessageAsRead({ ...BASE, instanceName: 'axion-acc1', remoteJid: 'x@s.whatsapp.net', messageId: 'y' }),
     ).rejects.toThrow('Evolution API error: 404');
+  });
+});
+
+describe('fetchEvolutionProfilePicture', () => {
+  it('returns the URL for a contact with a photo — confirmed live 2026-07-14', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ wuid: '5511999999999@s.whatsapp.net', profilePictureUrl: 'https://pps.whatsapp.net/x.jpg' }),
+    } as Response);
+    const result = await fetchEvolutionProfilePicture({ ...BASE, instanceName: 'axion-acc1', number: '5511999999999' });
+    expect(result).toBe('https://pps.whatsapp.net/x.jpg');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/chat/fetchProfilePictureUrl/axion-acc1');
+    expect(JSON.parse(init?.body as string)).toEqual({ number: '5511999999999' });
+  });
+
+  it('returns null (not an error) for a contact with no photo — confirmed live 2026-07-14, HTTP 200', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ wuid: '5511999999999@s.whatsapp.net', profilePictureUrl: null }),
+    } as Response);
+    const result = await fetchEvolutionProfilePicture({ ...BASE, instanceName: 'axion-acc1', number: '5511999999999' });
+    expect(result).toBeNull();
+  });
+
+  it('throws on a genuine non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
+    await expect(
+      fetchEvolutionProfilePicture({ ...BASE, instanceName: 'axion-acc1', number: '5511999999999' }),
+    ).rejects.toThrow('Evolution API error: 500');
   });
 });

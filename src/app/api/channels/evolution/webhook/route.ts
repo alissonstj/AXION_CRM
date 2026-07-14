@@ -6,6 +6,7 @@ import { ingestInbound } from '@/lib/channels/ingest';
 import { uploadEvolutionMedia } from '@/lib/channels/evolution-media';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
+import { fetchEvolutionProfilePicture } from '@/lib/whatsapp/evolution-api';
 
 interface EvolutionWebhookPayload {
   event: string;
@@ -187,6 +188,30 @@ export async function POST(request: Request) {
       });
       const inbounds = provider.parseWebhook(body);
 
+      // One-time avatar sync, fired only when ingestInbound just
+      // created a brand-new contact — not on every message, so this
+      // never adds a second Evolution call to the steady-state inbound
+      // path. Fire-and-forget: does not delay the webhook's ack, and a
+      // failed fetch/update is logged but never surfaces anywhere.
+      // Evolution-only — Meta's Cloud API has no equivalent endpoint
+      // for a customer's profile picture (confirmed 2026-07-14; only
+      // the business's own profile picture is queryable there).
+      const syncEvolutionAvatar = (contact: { id: string; phone: string }) => {
+        void fetchEvolutionProfilePicture({
+          baseUrl: process.env.EVOLUTION_API_URL!,
+          apiKey: expectedToken,
+          instanceName: body.instance,
+          number: contact.phone,
+        })
+          .then((url) => {
+            if (!url) return;
+            return db.from('contacts').update({ avatar_url: url }).eq('id', contact.id);
+          })
+          .catch((err) => {
+            console.error('[evolution webhook] avatar sync failed:', err instanceof Error ? err.message : err);
+          });
+      };
+
       for (const inbound of inbounds) {
         // Media resolution stays here — provider-specific, mirrors how
         // the Meta webhook route verifies media before calling
@@ -207,6 +232,7 @@ export async function POST(request: Request) {
           accountId: config.account_id,
           configOwnerUserId: config.user_id,
           db,
+          onContactCreated: syncEvolutionAvatar,
         });
       }
     }
