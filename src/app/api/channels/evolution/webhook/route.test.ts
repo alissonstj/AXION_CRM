@@ -6,36 +6,62 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // = vi.fn()` read directly inside the factory below hits the TDZ.
 // `vi.hoisted()` runs its initializer as part of that same hoisting
 // phase, so the value exists by the time the factory needs it.
-const { mockIngestInbound, mockDecrypt } = vi.hoisted(() => ({
+const { mockIngestInbound, mockDecrypt, mockDispatchWebhookEvent } = vi.hoisted(() => ({
   mockIngestInbound: vi.fn().mockResolvedValue(undefined),
   mockDecrypt: vi.fn((v: string) => v.replace('enc:', '')),
+  mockDispatchWebhookEvent: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/lib/channels/ingest', () => ({ ingestInbound: mockIngestInbound }));
 vi.mock('@/lib/channels/evolution-media', () => ({
   uploadEvolutionMedia: vi.fn().mockResolvedValue('https://cdn.local/chat-media/x.jpg'),
 }));
-
-function dbReturning(config: Record<string, unknown> | null) {
-  const chain = {
-    select: () => chain, eq: () => chain,
-    maybeSingle: async () => ({ data: config, error: null }),
-    update: () => ({ eq: async () => ({ error: null }) }),
-  };
-  return { from: () => chain } as never;
-}
-
-vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => dbReturning(mockConfigRow) }));
+vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: mockDispatchWebhookEvent }));
 
 let mockConfigRow: Record<string, unknown> | null;
+let mockMessageRow: Record<string, unknown> | null;
+let mockRecipientRow: Record<string, unknown> | null;
+let lastMessageUpdate: Record<string, unknown> | null;
+let lastRecipientUpdate: Record<string, unknown> | null;
+
+// Table-aware chainable stub. `whatsapp_config` keeps the original
+// single-config behavior; `messages`/`broadcast_recipients` are new,
+// added for the messages.update status-tick handling.
+function makeDb() {
+  let lastTable = '';
+  const chain: Record<string, unknown> = {
+    select: () => chain,
+    eq: () => chain,
+    limit: () => chain,
+    maybeSingle: async () => {
+      if (lastTable === 'whatsapp_config') return { data: mockConfigRow, error: null };
+      if (lastTable === 'messages') return { data: mockMessageRow, error: null };
+      if (lastTable === 'broadcast_recipients') return { data: mockRecipientRow, error: null };
+      return { data: null, error: null };
+    },
+    update: (patch: Record<string, unknown>) => {
+      if (lastTable === 'messages') lastMessageUpdate = patch;
+      if (lastTable === 'broadcast_recipients') lastRecipientUpdate = patch;
+      return { eq: async () => ({ error: null }) };
+    },
+  };
+  return { from: (t: string) => { lastTable = t; return chain; } } as never;
+}
+
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => makeDb() }));
 
 beforeEach(() => {
   mockIngestInbound.mockClear();
   mockDecrypt.mockClear();
+  mockDispatchWebhookEvent.mockClear();
   mockDecrypt.mockImplementation((v: string) => v.replace('enc:', ''));
   mockConfigRow = {
     account_id: 'acc-1', user_id: 'user-1',
     evolution_instance_name: 'axion-acc1', evolution_instance_token: 'enc:tok',
   };
+  mockMessageRow = null;
+  mockRecipientRow = null;
+  lastMessageUpdate = null;
+  lastRecipientUpdate = null;
 });
 
 // decrypt('enc:tok') must resolve to a plain token for the apikey check —
@@ -81,5 +107,94 @@ describe('POST /api/channels/evolution/webhook', () => {
     const res = await POST(req({ ...TEXT_INBOUND_SAMPLE, apikey: 'tok' }));
     expect(res.status).toBe(200);
     expect(mockIngestInbound).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/channels/evolution/webhook — messages.update (status ticks)', () => {
+  // Real payload shape, captured live 2026-07-14 from a self-sent text
+  // on a connected instance (anonymized ids). Confirms `keyId`, not the
+  // sibling `messageId`, is the WhatsApp wire id we match against.
+  function statusEvent(status: string) {
+    return {
+      event: 'messages.update',
+      instance: 'axion-acc1',
+      apikey: 'tok',
+      data: {
+        keyId: '3EB0C6810F1BA185D26B02',
+        remoteJid: '38745604669544@lid',
+        fromMe: true,
+        status,
+        instanceId: 'f0346a75-13cc-4ae6-bcc8-9b3526258697',
+        messageId: 'cmrjy3h5n0dy2qz5x49ksaavt', // Evolution's own row id — must NOT be matched against
+      },
+    };
+  }
+
+  it('maps DELIVERY_ACK to delivered and updates the matching message', async () => {
+    mockMessageRow = { id: 'msg-1', status: 'sent', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    const res = await POST(req(statusEvent('DELIVERY_ACK')));
+    expect(res.status).toBe(200);
+    expect(lastMessageUpdate).toEqual({ status: 'delivered' });
+  });
+
+  it('maps SERVER_ACK to sent, READ/PLAYED to read, ERROR to failed', async () => {
+    mockMessageRow = { id: 'msg-1', status: 'sending', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    await POST(req(statusEvent('SERVER_ACK')));
+    expect(lastMessageUpdate).toEqual({ status: 'sent' });
+
+    mockMessageRow = { id: 'msg-1', status: 'delivered', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    await POST(req(statusEvent('READ')));
+    expect(lastMessageUpdate).toEqual({ status: 'read' });
+
+    mockMessageRow = { id: 'msg-1', status: 'sent', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    await POST(req(statusEvent('ERROR')));
+    expect(lastMessageUpdate).toEqual({ status: 'failed' });
+  });
+
+  it('ignores PENDING (not on our status vocabulary) and does not touch the DB', async () => {
+    mockMessageRow = { id: 'msg-1', status: 'sending', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    await POST(req(statusEvent('PENDING')));
+    expect(lastMessageUpdate).toBeNull();
+  });
+
+  it('rejects a backward transition — the exact out-of-order case seen live (DELIVERY_ACK before SERVER_ACK)', async () => {
+    // Message is already 'delivered'; a late SERVER_ACK ("sent") must
+    // not regress it. This guard exists specifically because live
+    // capture showed Evolution can deliver these events out of order.
+    mockMessageRow = { id: 'msg-1', status: 'delivered', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    await POST(req(statusEvent('SERVER_ACK')));
+    expect(lastMessageUpdate).toBeNull();
+  });
+
+  it('no-ops cleanly (still 200) when no message row matches the keyId', async () => {
+    mockMessageRow = null;
+    const res = await POST(req(statusEvent('DELIVERY_ACK')));
+    expect(res.status).toBe(200);
+    expect(lastMessageUpdate).toBeNull();
+  });
+
+  it('mirrors onto broadcast_recipients when the message was part of a broadcast, stamping delivered_at', async () => {
+    mockMessageRow = { id: 'msg-1', status: 'sent', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    mockRecipientRow = { id: 'rec-1', status: 'sent' };
+    await POST(req(statusEvent('DELIVERY_ACK')));
+    expect(lastRecipientUpdate).toMatchObject({ status: 'delivered', delivered_at: expect.any(String) });
+  });
+
+  it('does not touch broadcast_recipients when no matching recipient row exists', async () => {
+    mockMessageRow = { id: 'msg-1', status: 'sent', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    mockRecipientRow = null;
+    await POST(req(statusEvent('DELIVERY_ACK')));
+    expect(lastRecipientUpdate).toBeNull();
+  });
+
+  it('fans out message.status_updated via dispatchWebhookEvent with the resolved account', async () => {
+    mockMessageRow = { id: 'msg-1', status: 'sent', conversation_id: 'conv-1', conversations: { account_id: 'acc-1' } };
+    await POST(req(statusEvent('DELIVERY_ACK')));
+    expect(mockDispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acc-1',
+      'message.status_updated',
+      expect.objectContaining({ whatsapp_message_id: '3EB0C6810F1BA185D26B02', conversation_id: 'conv-1', status: 'delivered' }),
+    );
   });
 });

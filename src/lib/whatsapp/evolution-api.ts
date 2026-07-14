@@ -75,7 +75,7 @@ export async function createEvolutionInstance(
         url: webhookUrl,
         byEvents: false,
         base64: true,
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
       },
     }),
   });

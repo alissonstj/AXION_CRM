@@ -43,7 +43,7 @@ describe('createEvolutionInstance', () => {
         url: 'https://app.local/api/channels/evolution/webhook',
         byEvents: false,
         base64: true,
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
       },
     });
   });
