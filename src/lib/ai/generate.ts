@@ -28,6 +28,7 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
   const providerArgs = {
     apiKey: config.apiKey,
     model: config.model,
+    baseUrl: config.baseUrl,
     systemPrompt,
     messages,
     timeoutMs,
