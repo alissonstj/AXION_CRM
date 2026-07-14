@@ -602,7 +602,8 @@
     "card": {
       "noContact": "No contact",
       "won": "Won",
-      "lost": "Lost"
+      "lost": "Lost",
+      "scheduleMessage": "Schedule message"
     },
     "form": {
       "editDeal": "Edit Deal",
