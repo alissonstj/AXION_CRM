@@ -69,6 +69,14 @@ interface MessageThreadProps {
   conversation: Conversation | null;
   contact: Contact | null;
   messages: Message[];
+  /**
+   * The account's connected channel — drives the 24h-session/template
+   * gate below (`sessionInfo`), a Meta Cloud API-only restriction that
+   * must never apply to Evolution-connected accounts (a real linked
+   * phone number has no such window). Optional, defaulting to 'meta',
+   * so existing callers/tests that don't pass it keep today's behavior.
+   */
+  channelProvider?: "meta" | "evolution";
   onMessagesLoaded: (messages: Message[]) => void;
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
@@ -157,6 +165,7 @@ export function MessageThread({
   conversation,
   contact,
   messages,
+  channelProvider = "meta",
   onMessagesLoaded,
   onNewMessage,
   onUpdateMessage,
@@ -226,8 +235,15 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
+  // 24-hour session timer — a Meta Cloud API-only rule (the customer
+  // service window that gates free-form sends behind a template once
+  // it lapses). Evolution accounts send through a real linked phone
+  // number via Baileys and have no such restriction, so this entire
+  // computation is skipped for them — including the "no customer
+  // messages yet" fallback below, which is just as Meta-specific.
   const sessionInfo = useMemo(() => {
+    if (channelProvider !== "meta") return { expired: false, remaining: "" };
+
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -251,7 +267,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, tTimer, channelProvider]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -911,18 +927,22 @@ export function MessageThread({
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
           </div>
-          {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+          {/* Session timer badge — Meta-only (see sessionInfo above);
+              hidden entirely for Evolution, where it would otherwise
+              render as an empty clock icon. Also hidden on the
+              narrowest phones so the name + back arrow keep their room. */}
+          {channelProvider === "meta" && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
+                sessionInfo.expired ? "text-red-400" : "text-primary"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {sessionInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
