@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockRequireRole, mockResolveConversationByPhone } = vi.hoisted(() => ({
+const { mockRequireRole, mockGetCurrentAccount, mockResolveConversationByPhone } = vi.hoisted(() => ({
   mockRequireRole: vi.fn(),
+  mockGetCurrentAccount: vi.fn(),
   mockResolveConversationByPhone: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/account', async () => {
   const actual = await vi.importActual<typeof import('@/lib/auth/account')>('@/lib/auth/account');
-  return { ...actual, requireRole: mockRequireRole };
+  return { ...actual, requireRole: mockRequireRole, getCurrentAccount: mockGetCurrentAccount };
 });
 
 vi.mock('@/lib/whatsapp/resolve-conversation', () => ({
@@ -15,7 +16,9 @@ vi.mock('@/lib/whatsapp/resolve-conversation', () => ({
 }));
 
 let mockDeal: Record<string, unknown> | null;
+let mockConversation: Record<string, unknown> | null;
 let lastInsert: Record<string, unknown> | null;
+let mockScheduledRows: Record<string, unknown>[];
 
 vi.mock('@/lib/automations/admin-client', () => ({
   supabaseAdmin: () => ({
@@ -25,6 +28,15 @@ vi.mock('@/lib/automations/admin-client', () => ({
           select: () => ({
             eq: () => ({
               eq: () => ({ maybeSingle: async () => ({ data: mockDeal, error: null }) }),
+            }),
+          }),
+        };
+      }
+      if (table === 'conversations') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({ maybeSingle: async () => ({ data: mockConversation, error: null }) }),
             }),
           }),
         };
@@ -46,8 +58,8 @@ vi.mock('@/lib/automations/admin-client', () => ({
   }),
 }));
 
-import { POST } from './route';
-import { ForbiddenError } from '@/lib/auth/account';
+import { GET, POST } from './route';
+import { ForbiddenError, UnauthorizedError } from '@/lib/auth/account';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 
 function req(body: unknown) {
@@ -55,6 +67,10 @@ function req(body: unknown) {
     method: 'POST',
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+function getReq(qs: string) {
+  return new Request(`http://localhost/api/scheduled-messages${qs}`);
 }
 
 const FUTURE = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
@@ -69,7 +85,27 @@ beforeEach(() => {
     conversationId: 'conv-1', contactId: 'contact-1', contactCreated: false,
   });
   mockDeal = { id: 'deal-1', contact: { id: 'contact-1', phone: '+15551234567', name: 'Alisson' } };
+  mockConversation = { id: 'conv-9', contact_id: 'contact-9' };
   lastInsert = null;
+
+  mockScheduledRows = [
+    { id: 'sched-1', conversation_id: 'conv-1', status: 'pending', scheduled_at: '2026-08-01T10:00:00Z' },
+  ];
+  mockGetCurrentAccount.mockReset().mockResolvedValue({
+    supabase: {
+      from: (table: string) => {
+        if (table !== 'scheduled_messages') throw new Error(`unexpected table: ${table}`);
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({ order: async () => ({ data: mockScheduledRows, error: null }) }),
+            }),
+          }),
+        };
+      },
+    },
+    userId: 'user-1', accountId: 'acc-1', role: 'agent', account: { id: 'acc-1', name: 'Acc' },
+  });
 });
 
 describe('POST /api/scheduled-messages', () => {
@@ -84,10 +120,10 @@ describe('POST /api/scheduled-messages', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400s when deal_id is missing', async () => {
+  it('400s when neither deal_id nor conversation_id is provided', async () => {
     const res = await POST(req({ content_type: 'text', content_text: 'oi', scheduled_at: FUTURE }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/deal_id/);
+    expect((await res.json()).error).toMatch(/deal_id or conversation_id/);
   });
 
   it('400s on an unsupported content_type', async () => {
@@ -167,5 +203,52 @@ describe('POST /api/scheduled-messages', () => {
       deal_id: 'deal-1', content_type: 'text', content_text: 'oi', quick_reply_id: 'qr-1', scheduled_at: FUTURE,
     }));
     expect(lastInsert).toMatchObject({ quick_reply_id: 'qr-1' });
+  });
+});
+
+describe('POST /api/scheduled-messages — conversation_id entry point (Inbox, Fase 3)', () => {
+  it('resolves contact_id directly from the conversation — no phone lookup needed', async () => {
+    const res = await POST(req({
+      conversation_id: 'conv-9', content_type: 'text', content_text: 'oi', scheduled_at: FUTURE,
+    }));
+    expect(res.status).toBe(201);
+    expect(mockResolveConversationByPhone).not.toHaveBeenCalled();
+    expect(lastInsert).toMatchObject({
+      account_id: 'acc-1', contact_id: 'contact-9', conversation_id: 'conv-9', deal_id: null,
+    });
+  });
+
+  it('404s when the conversation does not belong to the caller\'s account', async () => {
+    mockConversation = null;
+    const res = await POST(req({
+      conversation_id: 'conv-9', content_type: 'text', content_text: 'oi', scheduled_at: FUTURE,
+    }));
+    expect(res.status).toBe(404);
+  });
+
+  it('deal_id takes the deal path even when both are somehow present (deal_id checked first)', async () => {
+    await POST(req({
+      deal_id: 'deal-1', conversation_id: 'conv-9', content_type: 'text', content_text: 'oi', scheduled_at: FUTURE,
+    }));
+    expect(mockResolveConversationByPhone).toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/scheduled-messages', () => {
+  it('400s when conversation_id is missing', async () => {
+    const res = await GET(getReq(''));
+    expect(res.status).toBe(400);
+  });
+
+  it('lists pending scheduled messages for the given conversation (RLS-scoped)', async () => {
+    const res = await GET(getReq('?conversation_id=conv-1'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).scheduled_messages).toEqual(mockScheduledRows);
+  });
+
+  it('propagates an unauthenticated caller as 401', async () => {
+    mockGetCurrentAccount.mockRejectedValue(new UnauthorizedError());
+    const res = await GET(getReq('?conversation_id=conv-1'));
+    expect(res.status).toBe(401);
   });
 });

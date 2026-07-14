@@ -49,16 +49,18 @@ interface MediaDraft {
 export interface ScheduleMessageModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Kanban entry point — Fase 2 scope. The Inbox entry point (Fase 3)
-   *  will add a `conversationId` variant of this component's props. */
-  dealId: string;
+  /** Kanban entry point — pass exactly one of `dealId`/`conversationId`,
+   *  never both. */
+  dealId?: string;
+  /** Inbox entry point. */
+  conversationId?: string;
   onScheduled?: () => void;
 }
 
 /**
  * "Criar Agendamento" — schedule a one-off message to a specific lead
  * for future delivery. Shared shape across both entry points (Kanban
- * now, Inbox in Fase 3): title, content (text / media / quick reply),
+ * card, Inbox composer): title, content (text / media / quick reply),
  * date + time. Submits to POST /api/scheduled-messages; the actual
  * send happens later, out of band, via the cron sweep in
  * /api/automations/cron.
@@ -67,6 +69,7 @@ export function ScheduleMessageModal({
   open,
   onOpenChange,
   dealId,
+  conversationId,
   onScheduled,
 }: ScheduleMessageModalProps) {
   const [title, setTitle] = useState("");
@@ -166,6 +169,7 @@ export function ScheduleMessageModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           deal_id: dealId,
+          conversation_id: conversationId,
           title: title.trim() || undefined,
           content_type: contentType,
           content_text: contentType === "text" ? text : text.trim() || undefined,
@@ -187,7 +191,7 @@ export function ScheduleMessageModal({
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, scheduledAt, dealId, title, contentType, text, mediaDraft, reset, onOpenChange, onScheduled]);
+  }, [canSubmit, scheduledAt, dealId, conversationId, title, contentType, text, mediaDraft, reset, onOpenChange, onScheduled]);
 
   const contentTypeOptions: { value: ScheduledContentType; label: string }[] = [
     { value: "text", label: "Text" },
