@@ -5,6 +5,7 @@ import {
   sendInteractiveList,
   sendTextMessage,
   markMessageAsRead,
+  sendTypingIndicator,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -339,6 +340,51 @@ describe("markMessageAsRead", () => {
     );
     await expect(
       markMessageAsRead({ phoneNumberId: "test-phone", accessToken: "test-token", messageId: "x" }),
+    ).rejects.toThrow("Message not found");
+  });
+});
+
+describe("sendTypingIndicator", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("POSTs status:read + message_id + typing_indicator", async () => {
+    let captured: { url: string; method: string; body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        captured = { url, method: init.method ?? "GET", body: JSON.parse(String(init.body)) };
+        return new Response("{}", { status: 200 });
+      }),
+    );
+
+    await sendTypingIndicator({
+      phoneNumberId: "test-phone",
+      accessToken: "test-token",
+      messageId: "wamid.CUSTOMER-MSG",
+    });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.method).toBe("POST");
+    expect(captured!.url).toContain("test-phone/messages");
+    expect(captured!.body).toEqual({
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: "wamid.CUSTOMER-MSG",
+      typing_indicator: { type: "text" },
+    });
+  });
+
+  it("throws the Meta error message on a non-ok response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: { message: "Message not found" } }), { status: 404 }),
+      ),
+    );
+    await expect(
+      sendTypingIndicator({ phoneNumberId: "test-phone", accessToken: "test-token", messageId: "x" }),
     ).rejects.toThrow("Message not found");
   });
 });

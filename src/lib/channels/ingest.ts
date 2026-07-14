@@ -310,6 +310,7 @@ export async function ingestInbound(
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      triggeringProviderMessageId: inbound.providerMessageId,
     })
   }
 

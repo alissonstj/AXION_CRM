@@ -39,6 +39,14 @@ interface SendTextEngineArgs {
    *  badges it as an AI reply. Only the auto-reply bot sets this;
    *  deterministic Flow/automation sends leave it false. */
   aiGenerated?: boolean
+  /** When set, shows a "digitando…" indicator for this many ms before
+   *  sending — simulates human typing latency for AI auto-replies.
+   *  Absent for deterministic Flow sends (unaffected, opt-in only). */
+  simulateTypingMs?: number
+  /** The customer's inbound message this reply is answering — only
+   *  consulted by the Meta provider (see SendTypingArgs), only needed
+   *  when `simulateTypingMs` is set. */
+  contextProviderMessageId?: string
 }
 
 /**
@@ -77,6 +85,15 @@ export async function engineSendText(
   // account's whatsapp_config and owns the phone-variant retry
   // internally (see MetaProvider.sender).
   const provider = await getChannelForAccount(args.accountId, db)
+
+  if (args.simulateTypingMs) {
+    await provider.sender.sendTyping({
+      to: sanitized,
+      contextProviderMessageId: args.contextProviderMessageId,
+      durationMs: args.simulateTypingMs,
+    })
+  }
+
   const result = await provider.sender.sendText({
     to: sanitized,
     text: args.text,

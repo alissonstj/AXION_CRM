@@ -7,6 +7,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
   sendInteractiveList: vi.fn(),
   sendReactionMessage: vi.fn(),
   markMessageAsRead: vi.fn(),
+  sendTypingIndicator: vi.fn(),
   verifyPhoneNumber: vi.fn(),
 }));
 
@@ -15,6 +16,7 @@ import {
   sendMediaMessage,
   sendReactionMessage,
   markMessageAsRead,
+  sendTypingIndicator,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { MetaProvider } from './meta';
@@ -109,6 +111,26 @@ describe('MetaProvider.sender', () => {
     expect(markMessageAsRead).toHaveBeenCalledWith({
       phoneNumberId: 'PNID', accessToken: 'TOKEN', messageId: 'wamid.customer-msg',
     });
+  });
+
+  it('sendTyping calls sendTypingIndicator with contextProviderMessageId as messageId, ignores `to`', async () => {
+    vi.mocked(sendTypingIndicator).mockResolvedValue(undefined);
+    const provider = new MetaProvider(cfg);
+    // Small durationMs so the test doesn't actually wait multiple seconds
+    // — the sleep itself is a trivial setTimeout wrapper, not worth
+    // faking timers over.
+    await provider.sender.sendTyping({
+      to: '+15551234567', contextProviderMessageId: 'wamid.customer-msg', durationMs: 5,
+    });
+    expect(sendTypingIndicator).toHaveBeenCalledWith({
+      phoneNumberId: 'PNID', accessToken: 'TOKEN', messageId: 'wamid.customer-msg',
+    });
+  });
+
+  it('sendTyping no-ops (never calls sendTypingIndicator) without a contextProviderMessageId', async () => {
+    const provider = new MetaProvider(cfg);
+    await provider.sender.sendTyping({ to: '+15551234567', durationMs: 5000 });
+    expect(sendTypingIndicator).not.toHaveBeenCalled();
   });
 });
 

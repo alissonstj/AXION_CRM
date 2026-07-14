@@ -92,6 +92,25 @@ export interface MarkAsReadArgs {
   providerMessageId: string;
 }
 
+export interface SendTypingArgs {
+  /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
+  to: string;
+  /** Só a Meta usa — o indicador de digitação da Cloud API é preso a
+   *  uma mensagem inbound específica (marca ela como lida no mesmo
+   *  request). A Evolution ignora — a presence dela é por número/chat,
+   *  não por mensagem. Quando ausente na Meta, o provedor não tem onde
+   *  pendurar o indicador e faz no-op silencioso (ex.: conversa sem
+   *  nenhuma mensagem inbound ainda). */
+  contextProviderMessageId?: string;
+  /** Por quanto tempo manter "digitando" antes de reverter, em ms.
+   *  Contrato: `sendTyping` só resolve depois que essa duração já se
+   *  passou — a Evolution cumpre isso com seu próprio bloqueio
+   *  server-side (`delay`); a Meta não bloqueia sozinha, então o
+   *  provedor faz um sleep explícito por dentro pra manter o contrato
+   *  uniforme pra quem chama. */
+  durationMs: number;
+}
+
 export interface SendReactionArgs {
   /** Já sanitizado pelo caller — ver nota em `SendTextArgs.to`. */
   to: string;
@@ -117,6 +136,9 @@ export interface ChannelSender {
   /** Sends a read receipt — no new message is created, so there's no
    *  `OutboundResult`/providerMessageId to return. */
   markAsRead(args: MarkAsReadArgs): Promise<void>;
+  /** Shows a "typing…" indicator for `durationMs`, then resolves. Never
+   *  creates a message — same no-`OutboundResult` shape as `markAsRead`. */
+  sendTyping(args: SendTypingArgs): Promise<void>;
 }
 
 export type InboundKind =

@@ -5,6 +5,7 @@ import {
   sendInteractiveList,
   sendReactionMessage,
   markMessageAsRead,
+  sendTypingIndicator,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api';
 import { phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils';
@@ -22,7 +23,12 @@ import type {
   SendMediaArgs,
   SendReactionArgs,
   SendTextArgs,
+  SendTypingArgs,
 } from '../types';
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface MetaProviderConfig {
   phoneNumberId: string;
@@ -111,6 +117,19 @@ export class MetaProvider implements ChannelProvider {
       // call (only the message id is).
       markAsRead: async (args: MarkAsReadArgs): Promise<void> => {
         await markMessageAsRead({ phoneNumberId, accessToken, messageId: args.providerMessageId });
+      },
+      // Cloud API's typing indicator has no chat-scoped form — it must
+      // reference a specific inbound message id, and there's no explicit
+      // "stop typing" call (see SendTypingArgs' doc comment). Silently
+      // no-ops when the caller has no inbound message to attach to
+      // (e.g. a proactive first outbound with no prior customer message).
+      // The explicit sleep is what makes the "resolves after durationMs"
+      // contract hold here too — unlike Evolution's presence update,
+      // this HTTP call itself returns immediately.
+      sendTyping: async (args: SendTypingArgs): Promise<void> => {
+        if (!args.contextProviderMessageId) return;
+        await sendTypingIndicator({ phoneNumberId, accessToken, messageId: args.contextProviderMessageId });
+        await sleep(args.durationMs);
       },
     };
   }

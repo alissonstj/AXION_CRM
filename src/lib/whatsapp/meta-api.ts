@@ -742,6 +742,45 @@ export async function markMessageAsRead(args: MarkMessageAsReadArgs): Promise<vo
   }
 }
 
+export interface SendTypingIndicatorArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's message_id of the customer's inbound message the typing
+   *  indicator is shown in response to — required by the Cloud API,
+   *  there's no chat-scoped equivalent (unlike Evolution's presence
+   *  update, which targets a bare number). Same call also marks this
+   *  message as read (Meta's documented behavior, not something we
+   *  choose). */
+  messageId: string
+}
+
+/** POST /{phone_number_id}/messages with status:"read" +
+ *  typing_indicator — documented Cloud API endpoint
+ *  (developers.facebook.com/docs/whatsapp/cloud-api/typing-indicators).
+ *  The indicator dismisses itself after 25s or when the real reply is
+ *  sent — Meta gives no explicit "stop typing" call, unlike Evolution's
+ *  `delay`-bounded presence update. */
+export async function sendTypingIndicator(args: SendTypingIndicatorArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
 // ============================================================
 // Interactive (button replies + list messages)
 // ============================================================

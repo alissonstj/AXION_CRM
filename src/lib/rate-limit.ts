@@ -129,6 +129,10 @@ export const RATE_LIMITS = {
    *  quickly clicking through several conversations in the list is
    *  normal triage behavior, not abuse. */
   markRead: { limit: 120, windowMs: 60_000 },
+  /** Typing-indicator ping from the composer. The client already
+   *  throttles this to roughly once per few seconds while actively
+   *  typing, so 30/min is belt-and-braces, not the real ceiling. */
+  typing: { limit: 30, windowMs: 60_000 },
   /** Invitation peek (public, per-IP). 30/min lets a forwarded link
    *  retry a handful of times under flaky connectivity without
    *  enabling brute-force token enumeration. With 256-bit tokens the

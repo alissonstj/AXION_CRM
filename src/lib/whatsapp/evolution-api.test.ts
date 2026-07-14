@@ -8,6 +8,7 @@ import {
   sendEvolutionMedia,
   markEvolutionMessageAsRead,
   fetchEvolutionProfilePicture,
+  sendEvolutionPresence,
 } from './evolution-api';
 
 const BASE = { baseUrl: 'http://evo.local', apiKey: 'k' };
@@ -216,6 +217,31 @@ describe('markEvolutionMessageAsRead', () => {
     await expect(
       markEvolutionMessageAsRead({ ...BASE, instanceName: 'axion-acc1', remoteJid: 'x@s.whatsapp.net', messageId: 'y' }),
     ).rejects.toThrow('Evolution API error: 404');
+  });
+});
+
+describe('sendEvolutionPresence', () => {
+  it('POSTs { number, presence, delay } to /chat/sendPresence/{instance}', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    } as Response);
+    await sendEvolutionPresence({
+      ...BASE, instanceName: 'axion-acc1',
+      to: '5511999999999', presence: 'composing', delay: 5500,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/chat/sendPresence/axion-acc1');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      number: '5511999999999', presence: 'composing', delay: 5500,
+    });
+  });
+
+  it('throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
+    await expect(
+      sendEvolutionPresence({ ...BASE, instanceName: 'axion-acc1', to: '5511999999999', presence: 'composing', delay: 5500 }),
+    ).rejects.toThrow('Evolution API error: 500');
   });
 });
 

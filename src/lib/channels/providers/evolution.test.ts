@@ -147,6 +147,16 @@ describe('EvolutionProvider.sender', () => {
       remoteJid: '5511999999999@s.whatsapp.net', messageId: 'MSG-ID',
     });
   });
+
+  it('sendTyping calls sendEvolutionPresence with presence:composing and delay:durationMs, ignoring contextProviderMessageId', async () => {
+    const spy = vi.spyOn(evolutionApi, 'sendEvolutionPresence').mockResolvedValue(undefined);
+    const provider = new EvolutionProvider(config);
+    await provider.sender.sendTyping({ to: '5511999999999', contextProviderMessageId: 'unused', durationMs: 5500 });
+    expect(spy).toHaveBeenCalledWith({
+      baseUrl: 'http://evo.local', apiKey: 'instance-token', instanceName: 'axion-acc1',
+      to: '5511999999999', presence: 'composing', delay: 5500,
+    });
+  });
 });
 
 describe('EvolutionProvider lifecycle', () => {
