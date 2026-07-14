@@ -5,6 +5,7 @@ import {
   TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE, IMAGE_INBOUND_SAMPLE, AUDIO_INBOUND_SAMPLE,
   VIDEO_GROUP_SAMPLE, DOCUMENT_INBOUND_SAMPLE, LOCATION_INBOUND_SAMPLE, REACTION_INBOUND_SAMPLE,
   BUTTON_REPLY_INBOUND_SAMPLE, CONNECTION_UPDATE_ERROR_SAMPLE, REPLY_INBOUND_SAMPLE,
+  STICKER_INBOUND_SAMPLE,
 } from './__fixtures__/evolution-webhook-samples';
 
 const config = { baseUrl: 'http://evo.local', apiKey: 'instance-token', instanceName: 'axion-acc1' };
@@ -266,6 +267,14 @@ describe('EvolutionProvider.parseWebhook', () => {
     expect(inbound).toMatchObject({
       kind: 'audio', text: null,
       mediaBase64: 'ZmFrZS1hdWRpby1ieXRlcw==', mediaMimeType: 'audio/ogg; codecs=opus',
+    });
+  });
+
+  it('maps a sticker inbound to kind=image (same as Meta), no caption', () => {
+    const [inbound] = provider.parseWebhook(STICKER_INBOUND_SAMPLE);
+    expect(inbound).toMatchObject({
+      kind: 'image', text: null,
+      mediaBase64: 'ZmFrZS1zdGlja2VyLWJ5dGVz', mediaMimeType: 'image/webp',
     });
   });
 

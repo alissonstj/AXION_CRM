@@ -204,6 +204,7 @@ interface EvolutionMessageContent {
   imageMessage?: { caption?: string; mimetype?: string };
   videoMessage?: { caption?: string; mimetype?: string };
   audioMessage?: { mimetype?: string };
+  stickerMessage?: { mimetype?: string };
   documentMessage?: { caption?: string; fileName?: string; mimetype?: string };
   locationMessage?: { degreesLatitude: number; degreesLongitude: number; name?: string; address?: string };
   reactionMessage?: { key: { id: string }; text: string };
@@ -274,6 +275,17 @@ function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | nul
       return {
         ...base, kind: 'audio', text: null,
         mediaBase64: m.base64 ?? null, mediaMimeType: m.audioMessage?.mimetype ?? null,
+      };
+    case 'stickerMessage':
+      // Same treatment as Meta's sticker mapping (meta.ts:
+      // META_TO_INBOUND_KIND['sticker'] = 'image') — InboundKind has no
+      // separate sticker kind, and stickers carry no caption. Same
+      // base64-sibling convention already live-verified for image/
+      // video/audio; evolution-media.ts already maps image/webp
+      // (stickers' typical mimetype) to a .webp extension.
+      return {
+        ...base, kind: 'image', text: null,
+        mediaBase64: m.base64 ?? null, mediaMimeType: m.stickerMessage?.mimetype ?? null,
       };
     case 'documentMessage':
       return {
