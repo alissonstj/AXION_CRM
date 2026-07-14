@@ -40,6 +40,16 @@ export default function InboxPage() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  /** Drives the 24h-session/template gate in MessageThread — that rule
+   *  is a Meta Cloud API concept (customer service window) and must
+   *  never apply to Evolution-connected accounts, which send through a
+   *  real linked phone number with no such restriction. Defaults to
+   *  'meta' (the same default whatsapp_config.provider itself uses)
+   *  until the fetch below resolves, so a slow connection doesn't
+   *  briefly show Evolution behavior for a Meta account. */
+  const [channelProvider, setChannelProvider] = useState<"meta" | "evolution">(
+    "meta"
+  );
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -191,11 +201,12 @@ export default function InboxPage() {
 
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("status, provider")
         .eq("account_id", accountId)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
+      setChannelProvider(data?.provider === "evolution" ? "evolution" : "meta");
     };
 
     checkConnection();
@@ -602,6 +613,7 @@ export default function InboxPage() {
             conversation={activeConversation}
             contact={activeContact}
             messages={messages}
+            channelProvider={channelProvider}
             onMessagesLoaded={handleMessagesLoaded}
             onNewMessage={handleNewMessage}
             onUpdateMessage={handleUpdateMessage}
