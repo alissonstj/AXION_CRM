@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatPhoneForDisplay,
   isRecipientNotAllowedError,
   isValidE164,
   normalizePhone,
@@ -7,6 +8,30 @@ import {
   phonesMatch,
   sanitizePhoneForMeta,
 } from "./phone-utils";
+
+describe("formatPhoneForDisplay", () => {
+  it("formats a Brazilian landline-style number as +55 DD NNNN-NNNN", () => {
+    // 55 + 61 (DDD) + 8 digits — the exact example from the design doc.
+    expect(formatPhoneForDisplay("556188885665")).toBe("+55 61 8888-5665");
+  });
+
+  it("formats a Brazilian mobile number (9-digit local) as +55 DD NNNNN-NNNN", () => {
+    // 55 + 61 (DDD) + 9 digits (leading 9)
+    expect(formatPhoneForDisplay("5561988885665")).toBe("+55 61 98888-5665");
+  });
+
+  it("falls back to +<digits> for a non-Brazilian / unrecognized number", () => {
+    expect(formatPhoneForDisplay("14155551212")).toBe("+14155551212");
+  });
+
+  it("tolerates a leading + or spaces in the input", () => {
+    expect(formatPhoneForDisplay("+55 61 8888-5665")).toBe("+55 61 8888-5665");
+  });
+
+  it("returns the raw input for empty/garbage rather than throwing", () => {
+    expect(formatPhoneForDisplay("")).toBe("");
+  });
+});
 
 describe("sanitizePhoneForMeta", () => {
   it("strips +, spaces, and dashes leaving only digits", () => {

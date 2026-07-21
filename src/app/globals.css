@@ -114,6 +114,21 @@ html[data-mode="dark"] {
   --sidebar-accent: oklch(0.22 0.01 260);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.28 0.01 260);
+
+  /* ---- WhatsApp-fixed Inbox tokens ----
+   * Deliberately NOT derived from --card/--muted/--primary: these are
+   * WhatsApp's own identity colors (chat chrome, bubbles, wallpaper) and
+   * must stay constant regardless of the user's chosen accent theme
+   * (violet/emerald/cobalt/amber/rose) or the app's generic surface
+   * tokens. Referenced via arbitrary-value classes bound to these
+   * custom properties (e.g. `bg-[var(--wa-chrome-bg)]`), NOT Tailwind's
+   * `dark:` variant — this app switches mode via `[data-mode]`, not a
+   * `.dark` class, so `dark:` utilities silently never match here. */
+  --wa-chrome-bg: #111b21;
+  --wa-wallpaper-bg: #0b141a;
+  --wa-bubble-sent-bg: #005c4b;
+  --wa-bubble-sent-fg: #e9edef;
+  --wa-bubble-received-bg: #202c33;
 }
 
 html[data-mode="light"] {
@@ -143,6 +158,14 @@ html[data-mode="light"] {
   --sidebar-accent: oklch(0.96 0.004 260);
   --sidebar-accent-foreground: oklch(0.25 0.01 260);
   --sidebar-border: oklch(0.922 0.004 260);
+
+  /* ---- WhatsApp-fixed Inbox tokens (light) — see the dark block's
+   * comment above for why these aren't --card/--muted/--primary. */
+  --wa-chrome-bg: #ffffff;
+  --wa-wallpaper-bg: #efeae2;
+  --wa-bubble-sent-bg: #d9fdd3;
+  --wa-bubble-sent-fg: #111b21;
+  --wa-bubble-received-bg: #ffffff;
 }
 
 /* ---- ACCENT: primary color ---- */

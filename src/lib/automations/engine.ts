@@ -21,6 +21,7 @@ import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { isUniqueViolation } from '@/lib/contacts/dedupe'
 
 // ------------------------------------------------------------
 // Public API
@@ -351,7 +352,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_message': {
       const cfg = step.step_config as SendMessageStepConfig
       if (!args.contactId) throw new Error('send_message needs a contact')
-      const text = interpolate(cfg.text, args)
+      const text = await interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendText({
@@ -476,7 +477,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('update_contact_field needs a contact')
       // Resolve workflow variables ({{ vars.* }}, {{ message.text }}) so custom
       // values can be populated dynamically from the triggering context.
-      const value = interpolate(cfg.value, args)
+      const value = await interpolate(cfg.value, args)
 
       // Custom fields are encoded as `custom:<custom_field_id>`; anything else
       // is a built-in contact column.
@@ -526,6 +527,29 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'create_deal': {
       const cfg = step.step_config as CreateDealStepConfig
       if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
+
+      // Dedup guard: skip if this contact already has an open deal in the
+      // target pipeline. Deliberately `.limit(1)` (a plain array read),
+      // NOT `.maybeSingle()` — `.maybeSingle()` only tolerates 0 or 1
+      // matching rows and THROWS once 2+ exist (PGRST116, confirmed live
+      // 2026-07-16: "Cannot coerce the result to a single JSON object").
+      // The old code discarded `error`, so that throw silently looked
+      // like "no existing deal" and let another duplicate through —
+      // turning one ordinary race (two near-simultaneous trigger firings
+      // both passing this check before either's insert lands) into
+      // unbounded duplication, since every check after the 2nd duplicate
+      // hit the same throw. `.limit(1)` never errors on multiple rows.
+      if (args.contactId) {
+        const { data: existing } = await db
+          .from('deals')
+          .select('id')
+          .eq('contact_id', args.contactId)
+          .eq('pipeline_id', cfg.pipeline_id)
+          .eq('status', 'open')
+          .limit(1)
+        if (existing && existing.length > 0) return 'deal already exists for this contact in this pipeline, skipped'
+      }
+
       // Match the account's configured default currency rather than
       // the static `deals.currency` DB default — keeps automation-
       // created deals consistent with the one-currency-per-account
@@ -536,18 +560,31 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         .select('default_currency')
         .eq('id', args.automation.account_id)
         .maybeSingle()
-      await db.from('deals').insert({
+      const { error: insertError } = await db.from('deals').insert({
         // Tenancy + audit, same split as automation_logs above.
         account_id: args.automation.account_id,
         user_id: args.automation.user_id,
         pipeline_id: cfg.pipeline_id,
         stage_id: cfg.stage_id,
         contact_id: args.contactId,
-        title: interpolate(cfg.title, args),
+        title: await interpolate(cfg.title, args),
         value: cfg.value ?? 0,
         currency: acct?.default_currency ?? 'USD',
         status: 'open',
       })
+      if (insertError) {
+        // Lost a race against the pre-insert check above: another run
+        // inserted the contact's open deal for this pipeline between our
+        // SELECT and this INSERT, and the partial unique index (migration
+        // 047) rejected ours. Same recovery pattern as
+        // findOrCreateContact/findOrCreateConversation — report it as the
+        // expected skip it is, not a failure, and never mask any OTHER
+        // insert error by pretending it was a duplicate.
+        if (isUniqueViolation(insertError)) {
+          return 'deal already exists for this contact in this pipeline, skipped'
+        }
+        throw new Error(`create_deal insert failed: ${insertError.message}`)
+      }
       return 'deal created'
     }
 
@@ -561,7 +598,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!(await isDeliverableUrl(cfg.url))) {
         throw new Error('send_webhook: destination not allowed')
       }
-      const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
+      const body = cfg.body_template ? await interpolate(cfg.body_template, args) : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
@@ -702,11 +739,41 @@ function waitMs(cfg: WaitStepConfig): number {
   return Math.max(1_000, cfg.amount * unitMs)
 }
 
-function interpolate(s: string, args: ExecuteArgs): string {
+/**
+ * Resolves the contact row for `{{contact.*}}` interpolation, scoped to
+ * the automation's account (defense in depth, same reasoning as the
+ * `contact_field` condition case's account-scoped read). Only called
+ * when the template string actually contains a `{{contact.*}}` token,
+ * so automations that don't use it (the vast majority) pay no extra
+ * DB round-trip.
+ */
+async function fetchContactForInterpolation(
+  args: ExecuteArgs,
+): Promise<{ name: string | null; phone: string | null } | null> {
+  if (!args.contactId) return null
+  const db = supabaseAdmin()
+  const { data } = await db
+    .from('contacts')
+    .select('name, phone')
+    .eq('id', args.contactId)
+    .eq('account_id', args.automation.account_id)
+    .maybeSingle()
+  return data as { name: string | null; phone: string | null } | null
+}
+
+async function interpolate(s: string, args: ExecuteArgs): Promise<string> {
+  const needsContact = /\{\{\s*contact\.(name|phone)\s*\}\}/.test(s)
+  const contact = needsContact ? await fetchContactForInterpolation(args) : null
+
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const [ns, prop] = String(key).split('.')
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
+    // Falls back to phone when the contact has no name — matches
+    // findOrCreateContact's own `name: name || phone` default, so an
+    // auto-created contact never resolves to an empty title.
+    if (ns === 'contact' && prop === 'name') return String(contact?.name || contact?.phone || '')
+    if (ns === 'contact' && prop === 'phone') return String(contact?.phone ?? '')
     return ''
   })
 }

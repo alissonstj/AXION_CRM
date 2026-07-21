@@ -93,6 +93,7 @@ export async function POST(request: Request) {
         isActive: true,
         autoReplyEnabled: false,
         autoReplyMaxPerConversation: 3,
+        replyDelaySeconds: 4,
         handoffAgentId: null,
         embeddingsApiKey: null,
       })

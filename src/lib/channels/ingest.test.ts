@@ -9,11 +9,12 @@ vi.mock('@/lib/ai/auto-reply', () => ({ dispatchInboundToAiReply: vi.fn().mockRe
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/lib/contacts/dedupe', () => ({
   findExistingContact: vi.fn().mockResolvedValue(null),
+  findExistingContactByLid: vi.fn().mockResolvedValue(null),
   isUniqueViolation: () => false,
 }));
 
 import { ingestInbound } from './ingest';
-import { findExistingContact } from '@/lib/contacts/dedupe';
+import { findExistingContact, findExistingContactByLid } from '@/lib/contacts/dedupe';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
 import { dispatchInboundToFlows } from '@/lib/flows/engine';
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
@@ -37,6 +38,7 @@ import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 function makeFakeDb(
   inserts: Record<string, unknown[]>,
   updates: Record<string, unknown[]> = {},
+  rpcCalls: { fn: string; args: unknown }[] = [],
 ): SupabaseClient {
   let table = '';
   let mode: 'select' | 'insert' | 'update' | 'delete' = 'select';
@@ -99,6 +101,10 @@ function makeFakeDb(
       pendingInsert = null;
       return builder;
     },
+    rpc: (fn: string, args: unknown) => {
+      rpcCalls.push({ fn, args });
+      return Promise.resolve({ data: null, error: null });
+    },
   } as unknown as SupabaseClient;
 }
 
@@ -113,6 +119,164 @@ describe('ingestInbound', () => {
     );
     expect(inserts.messages).toHaveLength(1);
     expect(inserts.messages[0]).toMatchObject({ content_type: 'text', content_text: 'oi', sender_type: 'customer' });
+  });
+
+  it('bumps unread_count via the atomic increment RPC (not a read-then-write update) for a genuine customer inbound', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const updates: Record<string, unknown[]> = { conversations: [] };
+    const rpcCalls: { fn: string; args: unknown }[] = [];
+    const db = makeFakeDb(inserts, updates, rpcCalls);
+    await ingestInbound(
+      { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.unread1',
+        timestamp: new Date(), kind: 'text', text: 'oi' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    // Two concurrent inbound messages for the same conversation must not
+    // be able to both read a stale unread_count and both write N+1 —
+    // same lost-update race already fixed once in this codebase for
+    // automations.execution_count (migration 007). The plain conversations
+    // update must NOT carry unread_count at all; only the RPC touches it.
+    expect(rpcCalls).toEqual([
+      { fn: 'increment_conversation_unread', args: { p_conversation_id: 'conv-1' } },
+    ]);
+    expect(updates.conversations[0]).not.toHaveProperty('unread_count');
+  });
+
+  it('names a new contact with a formatted phone number when no name is available', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '556188885665', contactName: '', providerMessageId: 'wamid.noname',
+        timestamp: new Date(), kind: 'text', text: 'oi' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(inserts.contacts).toHaveLength(1);
+    expect(inserts.contacts[0]).toMatchObject({ name: '+55 61 8888-5665', phone: '556188885665' });
+  });
+
+  it('stores the contact LID on creation when the inbound is LID-addressed (so a later presence.update, which arrives LID-only, can resolve back to this contact)', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '556183565665', contactName: 'Ana', providerMessageId: 'wamid.lid1',
+        timestamp: new Date(), kind: 'text', text: 'oi', contactLid: '224876350689405' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(inserts.contacts[0]).toMatchObject({ lid: '224876350689405' });
+  });
+
+  it('backfills lid onto an existing contact that was created before its LID was known', async () => {
+    vi.mocked(findExistingContact).mockResolvedValueOnce({
+      id: 'contact-existing', name: 'Ana', phone: '556183565665', lid: null,
+    } as never);
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const updates: Record<string, unknown[]> = { contacts: [] };
+    const db = makeFakeDb(inserts, updates);
+    await ingestInbound(
+      { from: '556183565665', contactName: 'Ana', providerMessageId: 'wamid.lid2',
+        timestamp: new Date(), kind: 'text', text: 'oi', contactLid: '224876350689405' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(updates.contacts[0]).toMatchObject({ lid: '224876350689405' });
+  });
+
+  it('creates a contact keyed by LID alone when no phone is resolvable (investigacao-completude-sync-conversas.md — @lid chat with no phone alt)', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '', contactName: 'Alguém', providerMessageId: 'wamid.lidonly',
+        timestamp: new Date(), kind: 'text', text: 'oi', contactLid: '175441461657751' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(findExistingContactByLid).toHaveBeenCalledWith(db, 'acc-1', '175441461657751');
+    expect(inserts.contacts).toHaveLength(1);
+    expect(inserts.contacts[0]).toMatchObject({ phone: null, lid: '175441461657751', name: 'Alguém' });
+    expect(inserts.messages).toHaveLength(1);
+  });
+
+  it('finds the existing LID-only contact instead of creating a duplicate on a later message', async () => {
+    vi.mocked(findExistingContactByLid).mockResolvedValueOnce({
+      id: 'contact-lid-existing', name: 'Alguém', phone: null, lid: '175441461657751',
+    } as never);
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '', contactName: 'Alguém', providerMessageId: 'wamid.lidonly2',
+        timestamp: new Date(), kind: 'text', text: 'de novo', contactLid: '175441461657751' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(inserts.contacts).toHaveLength(0);
+  });
+
+  it('ingests a group message: creates a group conversation and records the participant sender (no contact created)', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '556294008178', contactName: 'Yeda Braga', providerMessageId: 'wamid.grp1',
+        timestamp: new Date(), kind: 'text', text: 'bom dia grupo',
+        group: { jid: '120363427655738502@g.us', name: 'A Grande Família' } },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(inserts.contacts).toHaveLength(0);
+    expect(inserts.conversations).toHaveLength(1);
+    expect(inserts.conversations[0]).toMatchObject({
+      is_group: true, group_jid: '120363427655738502@g.us',
+      group_name: 'A Grande Família', contact_id: null,
+    });
+    expect(inserts.messages).toHaveLength(1);
+    expect(inserts.messages[0]).toMatchObject({
+      sender_type: 'customer', content_text: 'bom dia grupo',
+      sender_participant_name: 'Yeda Braga', sender_participant_phone: '556294008178',
+    });
+  });
+
+  it('bumps unread_count via the atomic increment RPC for a group message too', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const updates: Record<string, unknown[]> = { conversations: [] };
+    const rpcCalls: { fn: string; args: unknown }[] = [];
+    const db = makeFakeDb(inserts, updates, rpcCalls);
+    await ingestInbound(
+      { from: '556294008178', contactName: 'Yeda Braga', providerMessageId: 'wamid.grp-unread',
+        timestamp: new Date(), kind: 'text', text: 'bom dia grupo',
+        group: { jid: '120363427655738502@g.us', name: 'A Grande Família' } },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(rpcCalls).toEqual([
+      { fn: 'increment_conversation_unread', args: { p_conversation_id: 'conv-1' } },
+    ]);
+    expect(updates.conversations[0]).not.toHaveProperty('unread_count');
+  });
+
+  it('does not dispatch automations / AI / flows for a group message', async () => {
+    vi.mocked(runAutomationsForTrigger).mockClear();
+    vi.mocked(dispatchInboundToAiReply).mockClear();
+    vi.mocked(dispatchInboundToFlows).mockClear();
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '556294008178', contactName: 'Yeda', providerMessageId: 'wamid.grp2',
+        timestamp: new Date(), kind: 'text', text: 'oi',
+        group: { jid: '120363427655738502@g.us', name: 'G' } },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(runAutomationsForTrigger).not.toHaveBeenCalled();
+    expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+    expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+  });
+
+  it('records a fromMe group message as an agent message with no participant identity', async () => {
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const db = makeFakeDb(inserts);
+    await ingestInbound(
+      { from: '', contactName: undefined, providerMessageId: 'wamid.grp3',
+        timestamp: new Date(), kind: 'text', text: 'aviso do grupo', fromMe: true,
+        group: { jid: '120363427655738502@g.us', name: 'G' } },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(inserts.messages).toHaveLength(1);
+    expect(inserts.messages[0]).toMatchObject({
+      sender_type: 'agent', sender_participant_name: null, sender_participant_phone: null,
+    });
   });
 
   it('passes the inbound providerMessageId to dispatchInboundToAiReply as triggeringProviderMessageId', async () => {
@@ -252,14 +416,16 @@ describe('ingestInbound', () => {
     it('does not bump the conversation unread_count', async () => {
       const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
       const updates: Record<string, unknown[]> = { conversations: [] };
-      const db = makeFakeDb(inserts, updates);
+      const rpcCalls: { fn: string; args: unknown }[] = [];
+      const db = makeFakeDb(inserts, updates, rpcCalls);
       await ingestInbound(
         { from: '15551234567', contactName: 'Ana', providerMessageId: 'wamid.phone2',
           timestamp: new Date(), kind: 'text', text: 'oi', fromMe: true },
         { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
       );
-      expect(updates.conversations).toHaveLength(1);
-      expect(updates.conversations[0]).toMatchObject({ unread_count: 0 });
+      // A phone-sent message doesn't touch unread_count at all — not even
+      // a same-value update — so the atomic-increment RPC must not fire.
+      expect(rpcCalls).toHaveLength(0);
     });
 
     it('does not dispatch the flow runner, automations, AI auto-reply, or message.received', async () => {

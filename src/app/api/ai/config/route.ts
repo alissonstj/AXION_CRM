@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, base_url, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, base_url, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, reply_delay_seconds, handoff_agent_id, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -111,6 +111,11 @@ export async function POST(request: Request) {
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
 
+    // Seconds to wait before sending an auto-reply (simulated typing).
+    let replyDelaySeconds = Number(body.reply_delay_seconds)
+    if (!Number.isFinite(replyDelaySeconds)) replyDelaySeconds = 4
+    replyDelaySeconds = Math.min(60, Math.max(0, Math.floor(replyDelaySeconds)))
+
     // Handoff routing target for auto-reply. A non-empty string must be a
     // member of this account (else the conversation would be assigned to a
     // stranger); an empty string / null means "leave unassigned" (the
@@ -183,6 +188,7 @@ export async function POST(request: Request) {
           isActive,
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,
+          replyDelaySeconds,
           handoffAgentId: null,
           embeddingsApiKey: null,
         })
@@ -224,6 +230,7 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      reply_delay_seconds: replyDelaySeconds,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

@@ -173,6 +173,20 @@ export interface NormalizedInbound {
    *  (see sent-by-crm-cache.ts) — so here it unambiguously means a
    *  message sent from the linked phone directly, outside the CRM. */
   fromMe?: boolean;
+  /** The contact's LID form, when this 1:1 chat is LID-addressed (never
+   *  set for group messages). Captured so a later presence.update event
+   *  — which arrives addressed only by LID, with no phone alt — can be
+   *  resolved back to this contact. See migration 049. */
+  contactLid?: string | null;
+  /** Present only for group (@g.us) messages. `jid` is the group's
+   *  WhatsApp id — the conversation key. `name` is the group's display
+   *  name when the parser knows it (often null at parse time; resolved
+   *  later from findChats/findGroupInfos). For a group message,
+   *  `from`/`contactName` carry the PARTICIPANT (sender) identity, not
+   *  the group's — and unlike a 1:1 message, a group message is never
+   *  dropped for lacking a resolvable sender phone, since it still
+   *  belongs to the group conversation. */
+  group?: { jid: string; name?: string | null } | null;
 }
 
 export interface ConnectionState {

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
+import { useIsTyping } from "@/hooks/use-is-typing";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,9 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Tag as TagIcon,
+  DollarSign,
+  Users,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -152,14 +156,22 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
 /**
  * WhatsApp-style doodle background applied to the chat area (both the
  * active thread and the empty state). The SVG tile lives at
- * `/public/inbox-doodle.svg`; the slate-950 colour sits underneath so
- * the doodles read as a subtle pattern rather than a stark grid.
+ * `/public/inbox-doodle.svg`.
+ *
+ * Uses the `--wa-wallpaper-bg` token (globals.css) — a fixed WhatsApp
+ * wallpaper tone (light beige / dark teal-gray) rather than the theme's
+ * `bg-background`, so it reads as the WhatsApp chat backdrop regardless
+ * of the user's chosen accent theme. Referenced via arbitrary-value
+ * classes bound to the `--wa-` custom properties (globals.css), NOT
+ * Tailwind's `dark:` variant — this app switches mode via the
+ * `[data-mode]` attribute on `<html>`, not a `.dark` class, so `dark:`
+ * utilities never match here (see globals.css's MODE block comment).
  *
  * Defined once at module scope so the two render paths can't drift —
  * if we ever switch the asset, both spots update together.
  */
 const DOODLE_BG_CLASSES =
-  "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
+  "bg-[var(--wa-wallpaper-bg)] bg-[url('/inbox-doodle.svg')] bg-repeat";
 
 export function MessageThread({
   conversation,
@@ -181,7 +193,7 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
 
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -211,6 +223,45 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+
+  // Discrete tag/deal indicators shown next to the contact name — the
+  // substitute for the contact panel's always-visible tag list/deal
+  // cards now that the panel defaults to closed (Fase 4). Deliberately a
+  // separate, lighter fetch from ContactSidebar's own (count/existence
+  // only, not full rows) rather than lifting that state up — the two
+  // panels are independent and this one only needs a number and a bool.
+  const [tagCount, setTagCount] = useState(0);
+  const [hasActiveDeal, setHasActiveDeal] = useState(false);
+  const contactId = contact?.id;
+  useEffect(() => {
+    if (!contactId) {
+      setTagCount(0);
+      setHasActiveDeal(false);
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const [tagsRes, dealsRes] = await Promise.all([
+        supabase
+          .from("contact_tags")
+          .select("id", { count: "exact", head: true })
+          .eq("contact_id", contactId),
+        supabase
+          .from("deals")
+          .select("id")
+          .eq("contact_id", contactId)
+          .not("status", "in", "(won,lost)")
+          .limit(1),
+      ]);
+      if (cancelled) return;
+      setTagCount(tagsRes.count ?? 0);
+      setHasActiveDeal((dealsRes.data?.length ?? 0) > 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contactId]);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -283,6 +334,14 @@ export function MessageThread({
 
   const conversationId = conversation?.id;
   const hasUnread = (conversation?.unread_count ?? 0) > 0;
+
+  // "digitando…" — the reverse of the outbound typing indicator
+  // (sendTyping already tells WhatsApp when the agent/AI is typing; this
+  // is the CRM finding out when the CUSTOMER is). `typing_until` arrives
+  // via the same conversations realtime subscription already driving the
+  // rest of this page (see PONTO 2's reordering fix) — no separate
+  // channel needed.
+  const isCustomerTyping = useIsTyping(conversation?.typing_until);
 
   // Fetch messages whenever the selected conversation changes. Kept
   // separate from the unread-reset effect so that incoming messages
@@ -867,7 +926,13 @@ export function MessageThread({
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
-  if (!conversation || !contact) {
+  //
+  // `contact` is only required for a 1:1 thread — a group conversation
+  // never has one (no single contact_id, see migration 046) and must
+  // still open normally. Before this `is_group` carve-out, clicking a
+  // group in the list always fell through to this empty state instead
+  // of the real thread, because `contact` was always null for it.
+  if (!conversation || (!contact && !conversation.is_group)) {
     return (
       <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -883,7 +948,11 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const isGroup = conversation.is_group === true;
+  const displayName = isGroup
+    ? conversation.group_name || t("group")
+    : contact?.name || contact?.phone || t("unknown");
+  const headerAvatarUrl = isGroup ? conversation.group_avatar_url : contact?.avatar_url;
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -904,9 +973,12 @@ export function MessageThread({
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
     <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
-      {/* Header — solid card surface sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
+      {/* Header — solid WhatsApp chrome surface sits on top of the doodle
+          so the name/avatar/dropdowns stay legible. Uses the same
+          `--wa-chrome-bg` token as the sidebar/conversation list/composer
+          footer so all four read as one consistent charcoal chrome
+          (was a mix of `bg-card` shades). */}
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--wa-chrome-bg)] px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
@@ -920,13 +992,71 @@ export function MessageThread({
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
-          </div>
+          {/* Avatar + name — clicking either toggles the contact panel
+              (WhatsApp's own "tap the header to open contact info"
+              affordance), same action as the dedicated toggle button
+              below. Falls back to a plain (non-interactive) block when
+              the parent hasn't wired up onToggleContactPanel. */}
+          <button
+            type="button"
+            onClick={onToggleContactPanel}
+            disabled={!onToggleContactPanel}
+            className="flex min-w-0 items-center gap-2 rounded-md text-left disabled:cursor-default sm:gap-3"
+            title={
+              onToggleContactPanel
+                ? (contactPanelOpen ? t("hideContact") : t("showContact"))
+                : undefined
+            }
+          >
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-medium text-foreground">
+              {headerAvatarUrl ? (
+                <img src={headerAvatarUrl} alt={displayName} className="h-9 w-9 rounded-full object-cover" />
+              ) : isGroup ? (
+                <Users className="h-5 w-5 text-muted-foreground" />
+              ) : (
+                displayName.charAt(0).toUpperCase()
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
+                {/* Discrete substitutes for the now-closed-by-default
+                    contact panel — see the tagCount/hasActiveDeal effect
+                    above. Fixed neutral/primary colors: tags and deal
+                    state are CRM-exclusive concepts, so the brand accent
+                    is appropriate here (unlike the WhatsApp-native chat
+                    chrome elsewhere in this redesign). */}
+                {tagCount > 0 && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                    title={t("tagsIndicator", { count: tagCount })}
+                  >
+                    <TagIcon className="h-2.5 w-2.5" />
+                    {tagCount}
+                  </span>
+                )}
+                {hasActiveDeal && (
+                  <span
+                    className="inline-flex shrink-0 items-center justify-center rounded-full bg-primary/15 p-1 text-primary"
+                    title={t("activeDealIndicator")}
+                  >
+                    <DollarSign className="h-2.5 w-2.5" />
+                  </span>
+                )}
+              </div>
+              {/* WhatsApp's own convention: this subtitle swaps to
+                  "digitando…" while the customer is actively typing,
+                  reverting to the phone number the instant they stop
+                  (or the indicator times out — see isCustomerTyping). */}
+              <p className="truncate text-xs text-muted-foreground">
+                {isCustomerTyping ? (
+                  <span className="text-primary">{t("customerTyping")}</span>
+                ) : (
+                  contact?.phone ?? ""
+                )}
+              </p>
+            </div>
+          </button>
           {/* Session timer badge — Meta-only (see sessionInfo above);
               hidden entirely for Evolution, where it would otherwise
               render as an empty clock icon. Also hidden on the
@@ -1152,6 +1282,8 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          contactAvatarUrl={isGroup ? conversation.group_avatar_url : contact?.avatar_url}
+                          ownAvatarUrl={profile?.avatar_url}
                         />
                       </MessageActions>
                     );

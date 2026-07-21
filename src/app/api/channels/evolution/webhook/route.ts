@@ -6,8 +6,9 @@ import { ingestInbound } from '@/lib/channels/ingest';
 import { uploadEvolutionMedia } from '@/lib/channels/evolution-media';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
-import { fetchEvolutionProfilePicture } from '@/lib/whatsapp/evolution-api';
+import { fetchEvolutionProfilePicture, fetchEvolutionGroupInfo } from '@/lib/whatsapp/evolution-api';
 import { wasSentByCrm } from '@/lib/channels/sent-by-crm-cache';
+import { runEvolutionHistoryBackfill } from '@/lib/channels/history-backfill';
 
 interface EvolutionWebhookPayload {
   event: string;
@@ -17,6 +18,9 @@ interface EvolutionWebhookPayload {
     state?: string;
     statusReason?: number;
     base64?: string;
+    /** qrcode.updated's actual shape (v2.3.7) — the QR image is nested
+     *  here, not at data.base64 directly (see the handler's comment). */
+    qrcode?: { base64?: string };
     /** messages.update — the WhatsApp wire message id (matches what
      *  sendEvolutionText/sendEvolutionMedia return as providerMessageId
      *  and what we store in messages.message_id). NOT the same as the
@@ -26,6 +30,15 @@ interface EvolutionWebhookPayload {
     keyId?: string;
     /** messages.update — Baileys' WAMessageStatus enum name. */
     status?: string;
+    /** presence.update — the chat JID this presence report is about.
+     *  Often a LID (@lid), not the phone — unlike message events, a
+     *  presence payload carries no remoteJidAlt to resolve a phone from
+     *  (confirmed live 2026-07-17). */
+    id?: string;
+    /** presence.update — keyed by the same `id` above (Baileys reports
+     *  one presence per JID in the map, even though only a single chat
+     *  is ever included per event, confirmed live). */
+    presences?: Record<string, { lastKnownPresence?: string }>;
   };
 }
 
@@ -128,6 +141,66 @@ async function handleEvolutionStatusUpdate(
   }
 }
 
+/** How long a "composing" presence keeps the inbox's typing indicator
+ *  showing without a follow-up event. Time-boxed rather than cleared
+ *  only by an explicit "stopped typing" event, so a dropped webhook
+ *  delivery or a backgrounded phone mid-type can't leave "digitando…"
+ *  stuck on forever — the UI just checks `typing_until > now()`. */
+const TYPING_INDICATOR_TTL_MS = 8_000;
+
+/**
+ * Mirrors the OUTBOUND typing indicator (sendTyping — tells WhatsApp
+ * when the agent/AI is typing) in the other direction: tells the CRM
+ * when the CUSTOMER is typing, so the inbox can show "digitando…" too.
+ *
+ * Resolves the chat's `id` (often a LID, not a phone — presence
+ * payloads carry no phone alt, unlike message events) to a contact via
+ * `contacts.lid` or `contacts.phone`, then to that contact's 1:1
+ * conversation, and stamps/clears `conversations.typing_until`.
+ * Best-effort throughout — this is cosmetic UI state, never worth
+ * surfacing an error for. Never touches groups: a group's `id` is a
+ * @g.us JID, which matches neither the phone nor lid column, so the
+ * contact lookup naturally no-ops for those.
+ */
+async function handleEvolutionPresenceUpdate(
+  db: SupabaseClient,
+  accountId: string,
+  data: EvolutionWebhookPayload['data'],
+): Promise<void> {
+  const id = data?.id;
+  if (!id) return;
+  const [rawId, suffix] = id.split('@');
+  if (!rawId) return;
+
+  const presence = data?.presences?.[id]?.lastKnownPresence;
+  if (!presence) return;
+
+  const column = suffix === 'lid' ? 'lid' : 'phone';
+  const { data: contact } = await db
+    .from('contacts')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq(column, rawId)
+    .maybeSingle();
+  if (!contact) return;
+
+  // UNIQUE(account_id, contact_id) (migration 036) guarantees at most
+  // one row — .maybeSingle() is safe here, no multi-row risk.
+  const { data: conversation } = await db
+    .from('conversations')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contact.id)
+    .maybeSingle();
+  if (!conversation) return;
+
+  const typingUntil = presence === 'composing'
+    ? new Date(Date.now() + TYPING_INDICATOR_TTL_MS).toISOString()
+    : null;
+
+  await db.from('conversations').update({ typing_until: typingUntil }).eq('id', conversation.id);
+}
+
 /**
  * A `fromMe: true` inbound is either an echo of a message the CRM
  * itself just sent, or a message sent directly from the linked phone.
@@ -185,8 +258,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid apikey' }, { status: 401 });
     }
     if (body.event === 'qrcode.updated') {
+      // Evolution v2.3.7 nests the QR under data.qrcode.base64, not
+      // data.base64 directly — confirmed live 2026-07-20 by logging the
+      // raw payload (investigacao: QR never appeared on reconnect).
+      // The old `body.data?.base64` was always undefined, so every
+      // delivery (Baileys refreshes the QR periodically while waiting
+      // for a scan) stomped evolution_qr_code back to null — the
+      // connect POST's own synchronous save (a *flat* REST response,
+      // correctly shaped) kept getting overwritten moments later.
       await db.from('whatsapp_config').update({
-        evolution_qr_code: body.data?.base64 ?? null,
+        evolution_qr_code: body.data?.qrcode?.base64 ?? null,
         evolution_qr_updated_at: new Date().toISOString(),
       }).eq('id', config.id);
       return NextResponse.json({ status: 'received' }, { status: 200 });
@@ -206,6 +287,26 @@ export async function POST(request: Request) {
         update.evolution_last_error = `state=${state} reason=${body.data?.statusReason ?? 'unknown'}`;
       }
       await db.from('whatsapp_config').update(update).eq('id', config.id);
+
+      // One-time retroactive history import (Ponto 2, 2026-07-15) — only
+      // the first time this config ever reaches 'connected'.
+      // evolution_history_synced_at is the idempotency marker: a routine
+      // disconnect/reconnect after the first successful run must not
+      // re-import the whole history. Fire-and-forget, same reasoning as
+      // ingestInbound's automation/AI dispatch — a slow or failing
+      // backfill (potentially thousands of messages) must not hold up
+      // this webhook's 200 ack to Evolution.
+      if (mapped === 'connected' && !config.evolution_history_synced_at && expectedToken) {
+        runEvolutionHistoryBackfill({
+          accountId: config.account_id,
+          configOwnerUserId: config.user_id,
+          db,
+          baseUrl: process.env.EVOLUTION_API_URL!,
+          apiKey: expectedToken,
+          instanceName: body.instance,
+        }).catch((err) => console.error('[history-backfill] run failed:', err));
+      }
+
       return NextResponse.json({ status: 'received' }, { status: 200 });
     }
 
@@ -241,6 +342,29 @@ export async function POST(request: Request) {
           });
       };
 
+      // One-time group name/avatar sync, fired only when ingestInbound
+      // just created a brand-new group conversation (the message webhook
+      // carries neither the group's subject nor its picture). Same
+      // fire-and-forget, best-effort contract as syncEvolutionAvatar.
+      const syncEvolutionGroupInfo = (conv: { id: string; groupJid: string }) => {
+        void fetchEvolutionGroupInfo({
+          baseUrl: process.env.EVOLUTION_API_URL!,
+          apiKey: expectedToken,
+          instanceName: body.instance,
+          groupJid: conv.groupJid,
+        })
+          .then((info) => {
+            if (!info.subject && !info.pictureUrl) return;
+            return db.from('conversations').update({
+              ...(info.subject ? { group_name: info.subject } : {}),
+              ...(info.pictureUrl ? { group_avatar_url: info.pictureUrl } : {}),
+            }).eq('id', conv.id);
+          })
+          .catch((err) => {
+            console.error('[evolution webhook] group info sync failed:', err instanceof Error ? err.message : err);
+          });
+      };
+
       for (const inbound of inbounds) {
         // fromMe: true is either an echo of our own CRM send, or a
         // message sent directly from the linked phone — see
@@ -272,12 +396,17 @@ export async function POST(request: Request) {
           configOwnerUserId: config.user_id,
           db,
           onContactCreated: syncEvolutionAvatar,
+          onGroupCreated: syncEvolutionGroupInfo,
         });
       }
     }
 
     if (body.event === 'messages.update') {
       await handleEvolutionStatusUpdate(db, { keyId: body.data?.keyId, status: body.data?.status });
+    }
+
+    if (body.event === 'presence.update') {
+      await handleEvolutionPresenceUpdate(db, config.account_id, body.data);
     }
   } catch (error) {
     console.error('[evolution webhook] error processing event:', {

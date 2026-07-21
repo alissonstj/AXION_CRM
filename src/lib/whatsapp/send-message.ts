@@ -175,6 +175,127 @@ export function validateSendMessageParams(params: {
   }
 }
 
+/**
+ * Send into a WhatsApp group. The recipient is the group JID (Evolution
+ * accepts it directly as `number`), there's no contact/phone, and only
+ * text/media/interactive are supported — templates are Meta-only and
+ * meaningless in a group. Persists the sent message as an agent message
+ * and bumps the conversation preview; deliberately no flow-pause (groups
+ * never drive 1:1 flows). `conversation` is the already-loaded,
+ * account-scoped row from sendMessageToConversation.
+ */
+async function sendGroupMessage(
+  db: SupabaseClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  conversation: any,
+  params: SendMessageParams
+): Promise<SendMessageResult> {
+  const {
+    messageType, contentText, mediaUrl, filename,
+    interactivePayload, replyToMessageId,
+  } = params;
+
+  const groupJid: string | null = conversation.group_jid ?? null;
+  if (!groupJid) {
+    throw new SendMessageError('bad_request', 'Group conversation is missing its group_jid', 400);
+  }
+  if (messageType === 'template') {
+    throw new SendMessageError('bad_request', 'Templates cannot be sent to a group', 400);
+  }
+
+  const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
+
+  // Reply context — resolve the parent's provider id + sender within THIS
+  // group conversation, same scoping rule as the 1:1 path.
+  let contextMessageId: string | undefined;
+  let contextFromMe: boolean | undefined;
+  if (replyToMessageId) {
+    const { data: parent } = await db
+      .from('messages')
+      .select('message_id, conversation_id, sender_type')
+      .eq('id', replyToMessageId)
+      .eq('conversation_id', conversation.id)
+      .maybeSingle();
+    if (parent?.message_id) {
+      contextMessageId = parent.message_id as string;
+      contextFromMe = parent.sender_type === 'agent';
+    }
+  }
+
+  const provider = await getChannelForAccount(conversation.account_id, db);
+  let waMessageId: string;
+  if (isMediaKind) {
+    const r = await provider.sender.sendMedia({
+      to: groupJid, kind: messageType as OutboundMediaKind, link: mediaUrl!,
+      caption: contentText || undefined, filename: filename || undefined,
+      contextProviderMessageId: contextMessageId, contextFromMe,
+    });
+    waMessageId = r.providerMessageId;
+  } else if (messageType === 'interactive') {
+    const p = interactivePayload!;
+    const r = p.kind === 'buttons'
+      ? await provider.sender.sendInteractiveButtons({
+          to: groupJid, bodyText: p.body, headerText: p.header || undefined,
+          footerText: p.footer || undefined, buttons: p.buttons,
+          contextProviderMessageId: contextMessageId,
+        })
+      : await provider.sender.sendInteractiveList({
+          to: groupJid, bodyText: p.body, buttonLabel: p.button_label,
+          headerText: p.header || undefined, footerText: p.footer || undefined,
+          sections: p.sections, contextProviderMessageId: contextMessageId,
+        });
+    waMessageId = r.providerMessageId;
+  } else {
+    const r = await provider.sender.sendText({
+      to: groupJid, text: contentText!,
+      contextProviderMessageId: contextMessageId, contextFromMe,
+    });
+    waMessageId = r.providerMessageId;
+  }
+
+  const interactiveBody = messageType === 'interactive' ? interactivePayload!.body : null;
+  const { data: messageRecord, error: msgError } = await db
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      sender_type: 'agent',
+      content_type: messageType,
+      content_text: interactiveBody ?? contentText ?? null,
+      media_url: mediaUrl || null,
+      interactive_payload: messageType === 'interactive' ? interactivePayload : null,
+      message_id: waMessageId,
+      status: 'sent',
+      reply_to_message_id: replyToMessageId || null,
+    })
+    .select()
+    .single();
+
+  if (msgError) {
+    console.error('[send-message] error inserting sent group message:', msgError);
+    throw new SendMessageError(
+      'db_error',
+      `Message sent to the group but failed to save to DB: ${msgError.message}`,
+      500
+    );
+  }
+
+  const lastMessageText =
+    messageType === 'interactive'
+      ? interactivePayloadPreviewText(interactivePayload!)
+      : contentText || `[${messageType}]`;
+
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: lastMessageText,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id);
+
+  return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
+}
+
 export async function sendMessageToConversation(
   db: SupabaseClient,
   accountId: string,
@@ -224,8 +345,15 @@ export async function sendMessageToConversation(
     throw new SendMessageError('not_found', 'Conversation not found', 404);
   }
 
+  // Group conversations send to the group JID (not a contact phone) and
+  // only support text/media/interactive — never Meta templates. Handled
+  // by a dedicated path that skips the phone-number / Meta-variant logic.
+  if (conversation.is_group) {
+    return sendGroupMessage(db, conversation, params);
+  }
+
   const contact = conversation.contact;
-  if (!contact?.phone) {
+  if (!contact?.phone && !contact?.lid) {
     throw new SendMessageError(
       'bad_request',
       'Contact phone number not found',
@@ -233,13 +361,26 @@ export async function sendMessageToConversation(
     );
   }
 
-  const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitizedPhone)) {
-    throw new SendMessageError(
-      'bad_request',
-      'Invalid phone number format',
-      400
-    );
+  // The "to" target for every 1:1 send below. A real phone is
+  // sanitized/validated as before; a LID-only contact (no phone-number
+  // alt ever provided by WhatsApp — investigacao-completude-sync-
+  // conversas.md) sends straight to its @lid JID, which Evolution/
+  // Baileys accepts exactly like a phone-addressed `number` (confirmed
+  // live 2026-07-20). Templates are Meta-only (guarded below) and Meta
+  // never produces a LID-only contact, so `sanitizedPhone` is always a
+  // real phone by the time the template branch runs.
+  let sanitizedPhone: string;
+  if (contact.phone) {
+    sanitizedPhone = sanitizePhoneForMeta(contact.phone);
+    if (!isValidE164(sanitizedPhone)) {
+      throw new SendMessageError(
+        'bad_request',
+        'Invalid phone number format',
+        400
+      );
+    }
+  } else {
+    sanitizedPhone = `${contact.lid}@lid`;
   }
 
   // WhatsApp config, account-scoped.
@@ -324,6 +465,16 @@ export async function sendMessageToConversation(
       throw new SendMessageError(
         'bad_request',
         'Templates require a Meta-connected account.',
+        400
+      );
+    }
+    // Belt-and-braces: Meta never produces a LID-only contact in
+    // practice (only Evolution does), but a template send has no @lid
+    // path of its own — Meta's API only ever accepts a real phone.
+    if (!contact.phone) {
+      throw new SendMessageError(
+        'bad_request',
+        'Templates require a contact with a known phone number.',
         400
       );
     }
@@ -448,7 +599,11 @@ export async function sendMessageToConversation(
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
 
-  if (workingPhone !== sanitizedPhone) {
+  // contact.phone check (not just the variant-mismatch check) guards
+  // this against ever writing a LID JID into contacts.phone — Evolution
+  // sends never set result.workingRecipient in practice, but this stays
+  // correct even if that changes.
+  if (contact.phone && workingPhone !== sanitizedPhone) {
     console.log(
       `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
     );

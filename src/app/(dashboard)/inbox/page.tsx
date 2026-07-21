@@ -32,7 +32,33 @@ export default function InboxPage() {
    */
   const deepLinkConvId = searchParams.get("c");
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversationsRaw] = useState<Conversation[]>([]);
+  // The list must always read as "most recent message first" — same
+  // ordering WhatsApp itself uses. The initial fetch already comes
+  // sorted (conversation-list.tsx's `.order("last_message_at", {
+  // ascending: false })`), but every realtime-driven patch below
+  // (`.map()`/prepend on new-message, conversation-update, and hydrate
+  // events) only replaces an entry's fields in place — it never moved
+  // that entry back to the top of the array. So the badge/preview text
+  // updated live, but the conversation's on-screen position stayed
+  // stale until a full page reload re-ran the sorted query (PONTO 2,
+  // investigacao-indicadores-lista-conversas.md). Wrapping the setter
+  // once, here, means every one of the many call sites below keeps its
+  // existing `setConversations(...)` call unchanged and automatically
+  // gets the resort — no risk of a future call site forgetting it.
+  const setConversations = useCallback(
+    (update: Conversation[] | ((prev: Conversation[]) => Conversation[])) => {
+      setConversationsRaw((prev) => {
+        const next = typeof update === "function" ? update(prev) : update;
+        return [...next].sort((a, b) => {
+          const at = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+          const bt = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+          return bt - at;
+        });
+      });
+    },
+    [],
+  );
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
@@ -61,13 +87,15 @@ export default function InboxPage() {
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
-   * Defaults to `true` (the historical behaviour) and is restored from
-   * localStorage after mount. We deliberately do NOT read localStorage in
-   * the initializer: the server renders with `true`, so reading a stored
-   * `false` synchronously would produce a hydration mismatch. The effect
-   * below reconciles to the stored value right after mount instead.
+   * Defaults to `false` — closed, WhatsApp-"contact info"-style, so the
+   * thread gets the full width until the agent asks for it — and is
+   * restored from localStorage after mount. We deliberately do NOT read
+   * localStorage in the initializer: the server renders with `false`, so
+   * reading a stored `true` synchronously would produce a hydration
+   * mismatch. The effect below reconciles to the stored value right
+   * after mount instead.
    */
-  const [contactPanelOpen, setContactPanelOpen] = useState(true);
+  const [contactPanelOpen, setContactPanelOpen] = useState(false);
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CONTACT_PANEL_STORAGE_KEY);

@@ -208,6 +208,16 @@
     "markReadFailed": "Falha ao marcar notificação como lida",
     "markAllReadFailed": "Falha ao marcar tudo como lido"
   },
+  "MessagePreview": {
+    "noMessagesYet": "Sem mensagens ainda",
+    "photo": "Foto",
+    "video": "Vídeo",
+    "document": "Documento",
+    "audio": "Áudio",
+    "location": "Localização",
+    "template": "Modelo",
+    "interactiveReply": "Resposta interativa"
+  },
   "Settings": {
     "pageTitle": "Configurações",
     "pageDesc": "Tudo em um só lugar — sua conta e seu espaço de trabalho. Escolha uma seção para gerenciá-la.",
@@ -681,6 +691,8 @@
       "autoReplyDesc": "O bot responde automaticamente a novas mensagens recebidas (somente quando nenhum fluxo as trata e nenhum agente está atribuído). Ele transfere para um humano quando não consegue ajudar.",
       "maxAutoReplies": "Máximo de respostas automáticas por conversa",
       "maxAutoRepliesDesc": "Depois desse número de respostas do bot em uma mesma conversa, ele para de responder.",
+      "replyDelay": "Tempo de espera antes de responder (segundos)",
+      "replyDelayDesc": "Simula alguém digitando antes de enviar a resposta, em vez de responder na hora.",
       "handoffTo": "Transferir para",
       "handoffToDesc": "Quando o bot não consegue ajudar — ou atinge o limite de respostas — ele pausa e encaminha a conversa para cá, com uma breve nota sobre o que aconteceu.",
       "handoffQueue": "Fila sem atribuição (qualquer agente pode assumir)",
@@ -755,13 +767,16 @@
       "filterOpen": "Abertas",
       "filterPending": "Pendentes",
       "filterClosed": "Fechadas",
+      "filterGroups": "Grupos",
       "tags": "Tags",
       "company": "Empresa",
       "allCompanies": "Todas as empresas",
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Nenhuma mensagem ainda",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "group": "Grupo",
+      "typing": "digitando…"
     },
     "messageThread": {
       "backToConversations": "Voltar para conversas",
@@ -769,6 +784,8 @@
       "showContactPanel": "Mostrar painel do contato",
       "hideContact": "Ocultar contato",
       "showContact": "Mostrar contato",
+      "tagsIndicator": "{count} {count, plural, =1 {tag} other {tags}}",
+      "activeDealIndicator": "Tem um negócio ativo",
       "refresh": "Atualizar",
       "refreshConversation": "Atualizar conversa",
       "status": "Status",
@@ -791,7 +808,10 @@
       "networkError": "erro de rede",
       "waitForSend": "Aguarde a mensagem terminar de ser enviada",
       "reactionFailed": "Falha na reação: {reason}",
-      "assignUpdateFailed": "Falha ao atualizar atribuição"
+      "assignUpdateFailed": "Falha ao atualizar atribuição",
+      "unknown": "Desconhecido",
+      "group": "Grupo",
+      "customerTyping": "digitando…"
     },
     "sessionTimer": {
       "expired": "Expirado",
@@ -852,7 +872,8 @@
       "interactiveReply": "[Resposta interativa]",
       "unsupported": "[Tipo de mensagem não suportado]",
       "aiBadge": "IA",
-      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA"
+      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
+      "downloadImage": "Baixar imagem"
     },
     "actions": {
       "reply": "Responder",
@@ -892,6 +913,10 @@
     },
     "sidebar": {
       "contactInfo": "Informações do contato",
+      "unnamedContact": "Contato sem nome",
+      "editName": "Editar nome",
+      "saveName": "Salvar nome",
+      "cancelEditName": "Cancelar",
       "tags": "Tags",
       "notes": "Notas",
       "deals": "Negócios",
@@ -995,6 +1020,7 @@
         "notes": "Notas",
         "custom": "Campos personalizados",
         "deals": "Negócios",
+        "tags": "Tags",
         "noTags": "Nenhuma tag",
         "noDeals": "Nenhum negócio",
         "addNotePlaceholder": "Adicionar uma nota..."
@@ -1007,6 +1033,7 @@
       "contactInfo": "Informações do contato",
       "unnamed": "Desconhecido",
       "contactDetailsDesc": "Detalhes do contato",
+      "name": "Nome",
       "phone": "Telefone",
       "email": "E-mail",
       "company": "Empresa",
@@ -1124,6 +1151,13 @@
       "pipelineName": "Nome do funil",
       "pipelineNamePlaceholder": "ex.: Vendas Corporativas",
       "defaultStagesDesc": "As etapas padrão (Novo Lead → Ganho) serão criadas automaticamente.",
+      "defaultStageNames": {
+        "newLead": "Novo Lead",
+        "qualified": "Qualificado",
+        "proposalSent": "Proposta Enviada",
+        "negotiation": "Negociação",
+        "won": "Ganho"
+      },
       "cancel": "Cancelar",
       "creating": "Criando...",
       "createPipelineBtn": "Criar funil",
@@ -1141,7 +1175,11 @@
       "noContact": "Sem contato",
       "won": "Ganho",
       "lost": "Perdido",
-      "scheduleMessage": "Agendar mensagem"
+      "scheduleMessage": "Agendar mensagem",
+      "scheduledMessages": "Mensagens agendadas",
+      "editValue": "Editar valor",
+      "openConversation": "Abrir conversa no WhatsApp",
+      "noConversationYet": "Ainda não há conversa com este contato"
     },
     "form": {
       "editDeal": "Editar negócio",
@@ -1427,6 +1465,8 @@
         "valueLabel": "Valor",
         "placeholderValue": "Texto ou {{ vars.x }} / {{ message.text }}",
         "titleLabel": "Título",
+        "insertContactName": "Inserir nome do contato",
+        "contactNameHint": "'{{ contact.name }}' usa o nome do contato no título — cai para o telefone se ele não tiver nome cadastrado.",
         "amountLabel": "Quantidade",
         "unitLabel": "Unidade",
         "units": {

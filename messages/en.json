@@ -208,6 +208,16 @@
     "markReadFailed": "Failed to mark notification as read",
     "markAllReadFailed": "Failed to mark all as read"
   },
+  "MessagePreview": {
+    "noMessagesYet": "No messages yet",
+    "photo": "Photo",
+    "video": "Video",
+    "document": "Document",
+    "audio": "Audio",
+    "location": "Location",
+    "template": "Template",
+    "interactiveReply": "Interactive reply"
+  },
   "Inbox": {
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
@@ -219,13 +229,16 @@
       "filterOpen": "Open",
       "filterPending": "Pending",
       "filterClosed": "Closed",
+      "filterGroups": "Groups",
       "tags": "Tags",
       "company": "Company",
       "allCompanies": "All companies",
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "group": "Group",
+      "typing": "typing…"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -233,6 +246,8 @@
       "showContactPanel": "Show contact panel",
       "hideContact": "Hide contact",
       "showContact": "Show contact",
+      "tagsIndicator": "{count} {count, plural, =1 {tag} other {tags}}",
+      "activeDealIndicator": "Has an active deal",
       "refresh": "Refresh",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
@@ -255,7 +270,10 @@
       "networkError": "network error",
       "waitForSend": "Wait for the message to finish sending",
       "reactionFailed": "Reaction failed: {reason}",
-      "assignUpdateFailed": "Failed to update assignment"
+      "assignUpdateFailed": "Failed to update assignment",
+      "unknown": "Unknown",
+      "group": "Group",
+      "customerTyping": "typing…"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -316,7 +334,8 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "downloadImage": "Download image"
     },
     "actions": {
       "reply": "Reply",
@@ -356,6 +375,10 @@
     },
     "sidebar": {
       "contactInfo": "Contact info",
+      "unnamedContact": "Unnamed contact",
+      "editName": "Edit name",
+      "saveName": "Save name",
+      "cancelEditName": "Cancel",
       "tags": "Tags",
       "notes": "Notes",
       "deals": "Deals",
@@ -459,6 +482,7 @@
         "notes": "Notes",
         "custom": "Custom Fields",
         "deals": "Deals",
+        "tags": "Tags",
         "noTags": "No tags",
         "noDeals": "No deals",
         "addNotePlaceholder": "Add a note..."
@@ -471,6 +495,7 @@
       "contactInfo": "Contact Information",
       "unnamed": "Unknown",
       "contactDetailsDesc": "Contact details",
+      "name": "Name",
       "phone": "Phone",
       "email": "Email",
       "company": "Company",
@@ -588,6 +613,13 @@
       "pipelineName": "Pipeline Name",
       "pipelineNamePlaceholder": "e.g., Enterprise Sales",
       "defaultStagesDesc": "Default stages (New Lead → Won) will be created automatically.",
+      "defaultStageNames": {
+        "newLead": "New Lead",
+        "qualified": "Qualified",
+        "proposalSent": "Proposal Sent",
+        "negotiation": "Negotiation",
+        "won": "Won"
+      },
       "cancel": "Cancel",
       "creating": "Creating...",
       "createPipelineBtn": "Create Pipeline",
@@ -605,7 +637,11 @@
       "noContact": "No contact",
       "won": "Won",
       "lost": "Lost",
-      "scheduleMessage": "Schedule message"
+      "scheduleMessage": "Schedule message",
+      "scheduledMessages": "Scheduled messages",
+      "editValue": "Edit value",
+      "openConversation": "Open WhatsApp conversation",
+      "noConversationYet": "No conversation with this contact yet"
     },
     "form": {
       "editDeal": "Edit Deal",
@@ -1089,6 +1125,8 @@
         "valueLabel": "Value",
         "placeholderValue": "Text or {{ vars.x }} / {{ message.text }}",
         "titleLabel": "Title",
+        "insertContactName": "Insert contact name",
+        "contactNameHint": "'{{ contact.name }}' uses the contact's name in the title — falls back to their phone if they have no name on file.",
         "amountLabel": "Amount",
         "unitLabel": "Unit",
         "units": {
@@ -1859,6 +1897,8 @@
       "autoReplyDesc": "The bot answers new inbound messages automatically (only when no flow handles them and no agent is assigned). Hands off to a human when it can’t help.",
       "maxAutoReplies": "Max auto-replies per conversation",
       "maxAutoRepliesDesc": "After this many bot replies in one thread, the bot goes quiet.",
+      "replyDelay": "Delay before replying (seconds)",
+      "replyDelayDesc": "Simulates someone typing before the reply is sent, instead of an instant response.",
       "handoffTo": "Hand off to",
       "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
       "handoffQueue": "Unassigned queue (any agent can pick it up)",

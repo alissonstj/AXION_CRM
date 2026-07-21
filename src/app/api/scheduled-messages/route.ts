@@ -4,13 +4,15 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
 import { SendMessageError } from '@/lib/whatsapp/send-message'
 
-// GET /api/scheduled-messages?conversation_id=...
+// GET /api/scheduled-messages?conversation_id=... | ?deal_id=...
 // POST /api/scheduled-messages
 //
 // Manual per-lead follow-ups (see migration 042). Two entry points feed
 // POST: a deal's Kanban card (`deal_id`, Fase 2) and an open Inbox
 // conversation (`conversation_id` directly, Fase 3) — exactly one of
-// the two is required per request.
+// the two is required per request. GET's view-list button mirrors the
+// same split: the Kanban card only has `deal_id` in scope, the Inbox
+// composer only has `conversation_id` — exactly one is required there too.
 //
 // conversation_id is resolved (find-or-create) here, at creation time,
 // not deferred to the cron sweep — see 042's header comment for why.
@@ -35,15 +37,18 @@ export async function GET(request: Request) {
     const { supabase } = await getCurrentAccount()
     const { searchParams } = new URL(request.url)
     const conversationId = searchParams.get('conversation_id')
-    if (!conversationId) {
-      return NextResponse.json({ error: 'conversation_id is required' }, { status: 400 })
+    const dealId = searchParams.get('deal_id')
+    if (!conversationId && !dealId) {
+      return NextResponse.json({ error: 'conversation_id or deal_id is required' }, { status: 400 })
     }
 
     // RLS (scheduled_messages_select) scopes to the caller's account.
+    // Kanban entry point (Fase 2) has a deal_id but no conversation_id in
+    // scope; Inbox (Fase 3) has the reverse — filter by whichever is given.
     const { data, error } = await supabase
       .from('scheduled_messages')
       .select('*')
-      .eq('conversation_id', conversationId)
+      .eq(conversationId ? 'conversation_id' : 'deal_id', conversationId ?? dealId)
       .eq('status', 'pending')
       .order('scheduled_at', { ascending: true })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

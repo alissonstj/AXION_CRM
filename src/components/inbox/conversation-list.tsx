@@ -8,8 +8,10 @@ import {
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
+import { formatMessagePreview } from "@/lib/inbox/message-preview";
+import { useIsTyping } from "@/hooks/use-is-typing";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -44,7 +46,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "groups";
 
 export function ConversationList({
   activeConversationId,
@@ -58,6 +60,7 @@ export function ConversationList({
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
+    { label: t("filterGroups"), value: "groups" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
@@ -163,6 +166,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "groups") {
+      result = result.filter((c) => c.is_group === true);
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -182,8 +187,9 @@ export function ConversationList({
       result = result.filter((c) => {
         const name = c.contact?.name?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
+        const groupName = c.group_name?.toLowerCase() ?? "";
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+        return name.includes(q) || phone.includes(q) || groupName.includes(q) || lastMsg.includes(q);
       });
     }
 
@@ -217,52 +223,45 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
-
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
     // the single pane showing; fixed 320px on desktop where it shares the
     // row with the thread + contact sidebar.
-    <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
+    <div className="flex h-full w-full flex-col border-r border-border bg-[var(--wa-chrome-bg)] lg:w-80">
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={handleSearchChange}
             placeholder={t("searchPlaceholder")}
-            className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
+            className="rounded-full border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-                {activeFilter?.label ?? t("filterAll")}
-                <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="border-border bg-popover"
+        {/* Status filter pills — same FILTER_OPTIONS/state as before, just
+            surfaced as WhatsApp-style pills instead of a dropdown so the
+            common toggles (Todas/Não lidas/...) are one tap away. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setFilter(opt.value)}
+              className={cn(
+                "inline-flex h-7 shrink-0 items-center rounded-full px-3 text-xs font-medium transition-colors",
+                filter === opt.value
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+              )}
             >
-              {FILTER_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => setFilter(opt.value)}
-                  className={cn(
-                    "text-sm",
-                    filter === opt.value
-                      ? "text-primary"
-                      : "text-popover-foreground"
-                  )}
-                >
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
+        <div className="flex flex-wrap items-center gap-1">
           {tags.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -436,9 +435,18 @@ function ConversationItem({
   onSelect,
   t,
 }: ConversationItemProps) {
+  const tPreview = useTranslations("MessagePreview");
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const isGroup = conversation.is_group === true;
+  const displayName = isGroup
+    ? conversation.group_name || t("group")
+    : contact?.name || contact?.phone || t("unknown");
+  const avatarUrl = isGroup ? conversation.group_avatar_url : contact?.avatar_url;
   const initials = displayName.charAt(0).toUpperCase();
+  const preview = formatMessagePreview(conversation.last_message_text, tPreview);
+  // Same "digitando…" signal as the open thread's header — see
+  // message-thread.tsx and useIsTyping's doc comment.
+  const isTyping = useIsTyping(conversation.typing_until);
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -454,18 +462,30 @@ function ConversationItem({
     <button
       onClick={handleClick}
       className={cn(
-        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-        isActive && "border-l-2 border-primary bg-muted/70"
+        "relative flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
+        isActive && "bg-muted/70"
       )}
     >
-      {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-        {contact?.avatar_url ? (
+      {/* Status indicator — a thin left-edge bar rather than a dot next to
+          the unread badge (they used to sit side by side and compete for
+          attention). Reuses the button's own left edge, which selection
+          highlighting no longer claims (moved to a plain background tint
+          above) so the two signals never overlap. */}
+      <span
+        className={cn("absolute inset-y-0 left-0 w-[3px]", STATUS_COLORS[conversation.status])}
+        title={conversation.status}
+        aria-hidden="true"
+      />
+      {/* Avatar — enlarged to the WhatsApp Web scale (was 10/10). */}
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted text-base font-medium text-foreground">
+        {avatarUrl ? (
           <img
-            src={contact.avatar_url}
+            src={avatarUrl}
             alt={displayName}
-            className="h-10 w-10 rounded-full object-cover"
+            className="h-12 w-12 rounded-full object-cover"
           />
+        ) : isGroup ? (
+          <Users className="h-6 w-6 text-muted-foreground" />
         ) : (
           initials
         )}
@@ -480,22 +500,26 @@ function ConversationItem({
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-muted-foreground">
-            {conversation.last_message_text || t("noMessagesYet")}
-          </p>
+          {isTyping ? (
+            <p className="min-w-0 truncate text-xs text-primary">{t("typing")}</p>
+          ) : (
+            <p className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+              <preview.Icon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{preview.text}</span>
+            </p>
+          )}
           <div className="flex shrink-0 items-center gap-1.5">
             {conversation.unread_count > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+              // Fixed WhatsApp green — deliberately not `bg-primary`, which
+              // tracks the user's chosen accent theme (violet/emerald/
+              // cobalt/amber/rose). This bubble is meant to read as the
+              // WhatsApp "you have unread messages" signal regardless of
+              // theme, same as WhatsApp's own unread count never changes
+              // color with client theming.
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-bold text-white dark:bg-green-600">
                 {conversation.unread_count}
               </span>
             )}
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
-              )}
-              title={conversation.status}
-            />
           </div>
         </div>
       </div>

@@ -9,6 +9,11 @@ import {
   markEvolutionMessageAsRead,
   fetchEvolutionProfilePicture,
   sendEvolutionPresence,
+  findEvolutionChats,
+  findEvolutionContacts,
+  findEvolutionMessages,
+  fetchEvolutionGroupInfo,
+  setEvolutionWebhook,
 } from './evolution-api';
 
 const BASE = { baseUrl: 'http://evo.local', apiKey: 'k' };
@@ -18,7 +23,16 @@ afterEach(() => {
 });
 
 describe('createEvolutionInstance', () => {
-  it('POSTs to /instance/create with the webhook block and returns the token + qr', async () => {
+  it('POSTs to /instance/create with NO webhook block and returns the token + qr', async () => {
+    // Deliberately no `webhook` in the create body — see setEvolutionWebhook
+    // below. /instance/create starts the Baileys channel synchronously and
+    // can fire qrcode.updated before this call's own HTTP response even
+    // returns, i.e. before the caller has had a chance to persist the
+    // token anywhere. Registering the webhook here guaranteed a 401 on
+    // that very first delivery (confirmed live 2026-07-15 — reproduced 4/4
+    // times, each one spiraling into a channel restart loop). The two-step
+    // fix: create with no webhook, persist the token, THEN
+    // setEvolutionWebhook.
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -27,28 +41,19 @@ describe('createEvolutionInstance', () => {
       }),
     } as Response);
 
-    const result = await createEvolutionInstance({
-      ...BASE,
-      instanceName: 'axion-acc1',
-      webhookUrl: 'https://app.local/api/channels/evolution/webhook',
-    });
+    const result = await createEvolutionInstance({ ...BASE, instanceName: 'axion-acc1' });
 
     expect(result).toEqual({ token: 'tok-123', qrCode: 'data:image/png;base64,AAA' });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://evo.local/instance/create');
     expect(init?.headers).toMatchObject({ apikey: 'k', 'Content-Type': 'application/json' });
     const body = JSON.parse(init?.body as string);
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       instanceName: 'axion-acc1',
       qrcode: true,
       integration: 'WHATSAPP-BAILEYS',
-      webhook: {
-        url: 'https://app.local/api/channels/evolution/webhook',
-        byEvents: false,
-        base64: true,
-        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
-      },
     });
+    expect(body).not.toHaveProperty('webhook');
   });
 
   it('throws with the server error message on a non-ok response', async () => {
@@ -58,7 +63,7 @@ describe('createEvolutionInstance', () => {
       json: async () => ({ message: 'Instance already exists' }),
     } as Response);
     await expect(
-      createEvolutionInstance({ ...BASE, instanceName: 'x', webhookUrl: 'https://x' }),
+      createEvolutionInstance({ ...BASE, instanceName: 'x' }),
     ).rejects.toThrow('Instance already exists');
   });
 
@@ -77,8 +82,41 @@ describe('createEvolutionInstance', () => {
       }),
     } as Response);
     await expect(
-      createEvolutionInstance({ ...BASE, instanceName: 'axion-acc1', webhookUrl: 'https://x' }),
+      createEvolutionInstance({ ...BASE, instanceName: 'axion-acc1' }),
     ).rejects.toThrow('This name "axion-acc1" is already in use.');
+  });
+});
+
+describe('setEvolutionWebhook', () => {
+  it('POSTs { webhook: { enabled: true, url, events, ... } } to /webhook/set/{instance}', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ enabled: true }),
+    } as Response);
+
+    await setEvolutionWebhook({
+      ...BASE, instanceName: 'axion-acc1',
+      webhookUrl: 'https://app.local/api/channels/evolution/webhook',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/webhook/set/axion-acc1');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      webhook: {
+        enabled: true,
+        url: 'https://app.local/api/channels/evolution/webhook',
+        byEvents: false,
+        base64: true,
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'PRESENCE_UPDATE'],
+      },
+    });
+  });
+
+  it('throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
+    await expect(
+      setEvolutionWebhook({ ...BASE, instanceName: 'axion-acc1', webhookUrl: 'https://x' }),
+    ).rejects.toThrow('Evolution API error: 500');
   });
 });
 
@@ -271,6 +309,127 @@ describe('fetchEvolutionProfilePicture', () => {
     vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
     await expect(
       fetchEvolutionProfilePicture({ ...BASE, instanceName: 'axion-acc1', number: '5511999999999' }),
+    ).rejects.toThrow('Evolution API error: 500');
+  });
+});
+
+describe('findEvolutionChats', () => {
+  it('POSTs an empty body to /chat/findChats/{instance} and returns the array — confirmed live 2026-07-15', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        { remoteJid: '5511999999999@s.whatsapp.net', lastMessage: { messageTimestamp: 1784068410 } },
+      ]),
+    } as Response);
+    const result = await findEvolutionChats({ ...BASE, instanceName: 'axion-acc1' });
+    expect(result).toEqual([
+      { remoteJid: '5511999999999@s.whatsapp.net', lastMessage: { messageTimestamp: 1784068410 } },
+    ]);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/chat/findChats/axion-acc1');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({});
+  });
+
+  it('throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
+    await expect(
+      findEvolutionChats({ ...BASE, instanceName: 'axion-acc1' }),
+    ).rejects.toThrow('Evolution API error: 500');
+  });
+});
+
+describe('fetchEvolutionGroupInfo', () => {
+  it('GETs /group/findGroupInfos with the groupJid query and returns subject + pictureUrl', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ subject: 'A Grande Família', pictureUrl: 'https://x/p.jpg', participants: [] }),
+    } as Response);
+    const result = await fetchEvolutionGroupInfo({
+      ...BASE, instanceName: 'axion-acc1', groupJid: '120363427655738502@g.us',
+    });
+    expect(result).toEqual({ subject: 'A Grande Família', pictureUrl: 'https://x/p.jpg' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/group/findGroupInfos/axion-acc1?groupJid=120363427655738502%40g.us');
+    expect(init?.method).toBe('GET');
+  });
+
+  it('returns nulls when fields are absent', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+    const result = await fetchEvolutionGroupInfo({ ...BASE, instanceName: 'axion-acc1', groupJid: 'g@g.us' });
+    expect(result).toEqual({ subject: null, pictureUrl: null });
+  });
+});
+
+describe('findEvolutionContacts', () => {
+  it('POSTs an empty body to /chat/findContacts/{instance} and returns the array — the address-book name lives in pushName', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        { remoteJid: '556195268242@s.whatsapp.net', pushName: 'Ana Luiza', isSaved: true },
+        { remoteJid: '175441461657751@lid', pushName: '', isSaved: true },
+      ]),
+    } as Response);
+    const result = await findEvolutionContacts({ ...BASE, instanceName: 'axion-acc1' });
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ remoteJid: '556195268242@s.whatsapp.net', pushName: 'Ana Luiza' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/chat/findContacts/axion-acc1');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({});
+  });
+
+  it('throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
+    await expect(
+      findEvolutionContacts({ ...BASE, instanceName: 'axion-acc1' }),
+    ).rejects.toThrow('Evolution API error: 500');
+  });
+});
+
+describe('findEvolutionMessages', () => {
+  it('POSTs { where: { key: { remoteJid } }, page } and returns the paginated result — confirmed live 2026-07-15', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: {
+          total: 141,
+          pages: 3,
+          currentPage: 1,
+          records: [
+            { key: { id: 'WA-1', fromMe: false, remoteJid: '5511999999999@s.whatsapp.net' }, messageType: 'conversation', message: { conversation: 'oi' }, messageTimestamp: 1784068410 },
+          ],
+        },
+      }),
+    } as Response);
+    const result = await findEvolutionMessages({
+      ...BASE, instanceName: 'axion-acc1', remoteJid: '5511999999999@s.whatsapp.net', page: 1,
+    });
+    expect(result.total).toBe(141);
+    expect(result.pages).toBe(3);
+    expect(result.records).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://evo.local/chat/findMessages/axion-acc1');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      where: { key: { remoteJid: '5511999999999@s.whatsapp.net' } },
+      page: 1,
+    });
+  });
+
+  it('defaults page to 1 when not given', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: { total: 0, pages: 0, currentPage: 1, records: [] } }),
+    } as Response);
+    await findEvolutionMessages({ ...BASE, instanceName: 'axion-acc1', remoteJid: 'x@s.whatsapp.net' });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toMatchObject({ page: 1 });
+  });
+
+  it('throws on a non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response);
+    await expect(
+      findEvolutionMessages({ ...BASE, instanceName: 'axion-acc1', remoteJid: 'x@s.whatsapp.net' }),
     ).rejects.toThrow('Evolution API error: 500');
   });
 });

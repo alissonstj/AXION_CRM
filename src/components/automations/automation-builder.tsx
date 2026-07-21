@@ -1401,11 +1401,28 @@ function StepEditor({
             t={t}
           />
           <FieldBlock label={t("config.titleLabel")}>
-            <Input
-              value={(cfg.title as string) ?? ""}
-              onChange={(e) => set({ title: e.target.value })}
-              className="bg-muted text-foreground"
-            />
+            <div className="flex gap-1.5">
+              <Input
+                value={(cfg.title as string) ?? ""}
+                onChange={(e) => set({ title: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+              {/* Inserts the literal token the engine's interpolate()
+                  resolves (engine.ts) — falls back to the contact's
+                  phone when they have no name on file. */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => set({ title: `${(cfg.title as string) ?? ""}{{contact.name}}` })}
+              >
+                {t("config.insertContactName")}
+              </Button>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {t("config.contactNameHint")}
+            </p>
           </FieldBlock>
           <FieldBlock label={t("config.valueLabel")}>
             <Input

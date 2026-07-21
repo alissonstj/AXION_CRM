@@ -18,6 +18,36 @@ export function normalizePhone(phone: string): string {
 }
 
 /**
+ * Format a phone number for display, the way WhatsApp shows an unsaved
+ * contact — e.g. "556188885665" → "+55 61 8888-5665". Used as the
+ * contact display name when no address-book / pushName name is known.
+ *
+ * Brazilian numbers (country code 55) get the familiar
+ * "+55 DD NNNNN-NNNN" (mobile, 9-digit local) or "+55 DD NNNN-NNNN"
+ * (8-digit local) grouping. Everything else falls back to a plain
+ * "+<digits>" — honest and unambiguous without guessing another
+ * country's grouping wrong.
+ */
+export function formatPhoneForDisplay(phone: string): string {
+  const d = normalizePhone(phone);
+  if (!d) return phone;
+
+  // Brazil: 55 + 2-digit area code (DDD) + 8 or 9 local digits.
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
+    const ddd = d.slice(2, 4);
+    const local = d.slice(4);
+    if (local.length === 9) {
+      return `+55 ${ddd} ${local.slice(0, 5)}-${local.slice(5)}`;
+    }
+    if (local.length === 8) {
+      return `+55 ${ddd} ${local.slice(0, 4)}-${local.slice(4)}`;
+    }
+  }
+
+  return `+${d}`;
+}
+
+/**
  * Compare two phone numbers accounting for trunk prefix differences.
  * e.g. "370063949836" (with trunk 0) matches "37063949836" (without trunk 0)
  * by comparing the last 8 digits.

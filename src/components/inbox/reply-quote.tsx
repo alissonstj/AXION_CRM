@@ -15,9 +15,10 @@ interface ReplyQuoteProps {
   /** Present → renders the composer-chip variant with an X button. Absent →
    *  renders the embedded-in-bubble variant. */
   onDismiss?: () => void;
-  /** True when embedded inside an outbound (primary-filled) bubble, so the
-   *  quote must read against the primary surface rather than the neutral
-   *  foreground — otherwise it goes low-contrast in light mode. */
+  /** True when embedded inside an outbound bubble (the fixed WhatsApp
+   *  green fill — see message-bubble.tsx), so the quote must read
+   *  against that surface rather than the neutral foreground —
+   *  otherwise it goes low-contrast. */
   onPrimary?: boolean;
 }
 
@@ -33,11 +34,17 @@ export function ReplyQuote({
     <div
       className={cn(
         "flex items-start gap-2 border-l-2 px-2 py-1",
-        onPrimary ? "border-primary-foreground/50" : "border-primary",
+        // `--wa-bubble-sent-fg` (globals.css) is the token the bubble this
+        // quote sits inside uses for its own text — deriving the border/
+        // bg tint from it via color-mix keeps this correct in both modes
+        // without a `dark:` variant (this app doesn't use a `.dark` class).
+        onPrimary
+          ? "border-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_35%,transparent)]"
+          : "border-primary",
         isChip
           ? "rounded-md bg-muted/80"
           : onPrimary
-            ? "mb-1.5 rounded-md bg-primary-foreground/15"
+            ? "mb-1.5 rounded-md bg-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_12%,transparent)]"
             : "mb-1.5 rounded-md bg-background/20",
       )}
     >
@@ -45,7 +52,7 @@ export function ReplyQuote({
         <div
           className={cn(
             "truncate text-[11px] font-medium",
-            onPrimary ? "text-primary-foreground" : "text-primary",
+            onPrimary ? "text-[var(--wa-bubble-sent-fg)]" : "text-primary",
           )}
         >
           {authorLabel}

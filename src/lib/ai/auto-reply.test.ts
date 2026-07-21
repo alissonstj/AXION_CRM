@@ -76,6 +76,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     isActive: true,
     autoReplyEnabled: true,
     autoReplyMaxPerConversation: 3,
+    replyDelaySeconds: 4,
     handoffAgentId: null,
     embeddingsApiKey: null,
     ...overrides,
@@ -113,17 +114,15 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     )
   })
 
-  it('asks engineSendText to simulate typing for 4-5s and passes the triggering wamid as context', async () => {
+  it("uses the account's configured reply_delay_seconds for simulated typing and passes the triggering wamid as context", async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ replyDelaySeconds: 7 }))
     await dispatchInboundToAiReply({ ...ARGS, triggeringProviderMessageId: 'wamid.customer-trigger' })
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({
         contextProviderMessageId: 'wamid.customer-trigger',
-        simulateTypingMs: expect.any(Number),
+        simulateTypingMs: 7000,
       }),
     )
-    const { simulateTypingMs } = h.engineSendText.mock.calls[0][0]
-    expect(simulateTypingMs).toBeGreaterThanOrEqual(4000)
-    expect(simulateTypingMs).toBeLessThan(5000)
   })
 
   it('passes contextProviderMessageId: undefined when the caller has no triggering wamid handy', async () => {

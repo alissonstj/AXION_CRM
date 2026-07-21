@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   dedupeByPhone,
   findExistingContact,
+  findExistingContactByLid,
   isExactMatch,
   isUniqueViolation,
   normalizeKey,
@@ -93,5 +94,47 @@ describe("findExistingContact", () => {
   it("returns null for an empty phone without querying", async () => {
     const db = stubDb([{ id: "c1", phone: "15551234567" }]);
     expect(await findExistingContact(db, "acct", "   ")).toBeNull();
+  });
+});
+
+describe("findExistingContactByLid", () => {
+  function stubDb(row: Record<string, unknown> | null): { db: SupabaseClient; eqCalls: [string, unknown][] } {
+    const eqCalls: [string, unknown][] = [];
+    const builder = {
+      select: () => builder,
+      eq: (col: string, val: unknown) => {
+        eqCalls.push([col, val]);
+        return builder;
+      },
+      maybeSingle: () => Promise.resolve({ data: row, error: null }),
+    };
+    return { db: { from: () => builder } as unknown as SupabaseClient, eqCalls };
+  }
+
+  it("returns the matching contact for this account+lid", async () => {
+    const { db } = stubDb({ id: "c1", lid: "123613571186880", phone: null });
+    const hit = await findExistingContactByLid(db, "acct", "123613571186880");
+    expect(hit?.id).toBe("c1");
+  });
+
+  it("scopes the lookup to account_id and lid", async () => {
+    const { db, eqCalls } = stubDb(null);
+    await findExistingContactByLid(db, "acct", "123613571186880");
+    expect(eqCalls).toEqual([
+      ["account_id", "acct"],
+      ["lid", "123613571186880"],
+    ]);
+  });
+
+  it("returns null when no contact matches", async () => {
+    const { db } = stubDb(null);
+    expect(await findExistingContactByLid(db, "acct", "999")).toBeNull();
+  });
+
+  it("returns null for an empty lid without querying", async () => {
+    const querySpy = vi.fn();
+    const db = { from: querySpy } as unknown as SupabaseClient;
+    expect(await findExistingContactByLid(db, "acct", "")).toBeNull();
+    expect(querySpy).not.toHaveBeenCalled();
   });
 });

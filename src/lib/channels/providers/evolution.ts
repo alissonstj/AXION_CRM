@@ -55,13 +55,14 @@ const MEDIA_KIND_TO_EVOLUTION: Record<SendMediaArgs['kind'], EvolutionMediaType>
 /** Builds the quoted-message key sendEvolutionText/sendEvolutionMedia
  *  expect, from the args every ChannelSender caller already provides
  *  (contextProviderMessageId + the new contextFromMe). `to` doubles as
- *  the chat's remoteJid — correct for a 1:1 chat, which is the only
- *  case this provider handles (groups are out of scope, see
- *  parseWebhook). Returns undefined when there's no reply target, so
- *  callers can pass it straight through without an extra branch. */
+ *  the chat's remoteJid: a bare phone for a 1:1 chat (needs the
+ *  @s.whatsapp.net suffix) or an already-qualified JID for a group
+ *  ("...@g.us" — used as-is). Returns undefined when there's no reply
+ *  target, so callers can pass it straight through without a branch. */
 function buildQuotedRef(to: string, contextProviderMessageId?: string, contextFromMe?: boolean): EvolutionQuotedRef | undefined {
   if (!contextProviderMessageId) return undefined;
-  return { remoteJid: `${to}@s.whatsapp.net`, fromMe: contextFromMe ?? false, id: contextProviderMessageId };
+  const remoteJid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+  return { remoteJid, fromMe: contextFromMe ?? false, id: contextProviderMessageId };
 }
 
 export class EvolutionProvider implements ChannelProvider {
@@ -155,20 +156,31 @@ export class EvolutionProvider implements ChannelProvider {
     // checks the in-memory CRM-send marker + a DB fallback before
     // deciding whether to ingest at all — see sent-by-crm-cache.ts).
 
-    // Groups: remoteJid ends in @g.us and the real sender lives in
-    // participant/participantAlt, not remoteJid — out of scope (design
-    // doc, "Fora de escopo"). Skip rather than misattribute the group
-    // as if it were a 1:1 contact.
-    if (data.key.remoteJid.endsWith('@g.us')) return [];
+    // WhatsApp Channels/newsletters (@newsletter) and bot chats (@bot)
+    // are not real people and must never become contacts — skip them.
+    // Groups (@g.us) ARE handled: mapEvolutionMessage produces a group
+    // inbound keyed by the group JID, with the real sender resolved from
+    // participant/participantAlt.
+    const jid = data.key.remoteJid;
+    if (jid.endsWith('@newsletter') || jid.endsWith('@bot')) return [];
 
     const inbound = mapEvolutionMessage(data);
     return inbound ? [inbound] : [];
   }
+  // Not on the live connect path today — src/app/api/channels/evolution/
+  // connect/route.ts calls createEvolutionInstance/connectEvolutionInstance
+  // directly so it can sequence the DB write and setEvolutionWebhook call
+  // around them (see that route's own comments for why the ordering
+  // matters). Kept here for ChannelProvider interface conformance/tests;
+  // a caller using this method directly still gets the no-webhook-at-
+  // creation half of the fix, but must call setEvolutionWebhook itself
+  // once it has durably persisted the returned token — this method has
+  // no DB access to do that safely on its own.
   async connect(): Promise<ConnectionState> {
-    const { baseUrl, apiKey, instanceName, adminApiKey, isNewInstance, webhookUrl } = this.config;
+    const { baseUrl, apiKey, instanceName, adminApiKey, isNewInstance } = this.config;
     if (isNewInstance) {
       const result = await createEvolutionInstance({
-        baseUrl, apiKey: adminApiKey ?? apiKey, instanceName, webhookUrl: webhookUrl ?? '',
+        baseUrl, apiKey: adminApiKey ?? apiKey, instanceName,
       });
       return { status: 'connecting', qrCode: result.qrCode };
     }
@@ -248,7 +260,7 @@ interface EvolutionMessageContent {
   base64?: string;
 }
 
-interface EvolutionUpsertData {
+export interface EvolutionUpsertData {
   key: EvolutionMessageKey;
   pushName?: string;
   message: EvolutionMessageContent;
@@ -269,21 +281,109 @@ interface EvolutionWebhookBody {
   data: EvolutionUpsertData;
 }
 
-/** Strips the @s.whatsapp.net / @lid suffix. Falls back to
- *  `remoteJidAlt` when `remoteJid` doesn't look like a phone number —
- *  covers the "LID" privacy addressing mode (documented limitation,
- *  see design doc). */
-function extractPhone(key: EvolutionMessageKey): string {
-  const raw = key.remoteJid.split('@')[0];
-  if (/^\d+$/.test(raw)) return raw;
-  const alt = key.remoteJidAlt?.split('@')[0];
-  return alt && /^\d+$/.test(alt) ? alt : raw;
+/** Resolves the contact's REAL phone — the digits of an
+ *  `@s.whatsapp.net` JID — from a message key, or null when only a LID
+ *  is available.
+ *
+ *  WhatsApp's newer `@lid` addressing puts an internal LID in
+ *  `remoteJid` and the real phone JID in `remoteJidAlt`. A LID's own
+ *  digits are NOT a phone number and must never be stored as one — the
+ *  old code did exactly that (`/^\d+$/.test(raw)` matches a LID), which
+ *  leaked 14-15 digit LIDs in as bogus "phone numbers". We therefore
+ *  scan for an `@s.whatsapp.net` JID across `remoteJid` then
+ *  `remoteJidAlt` and return its digits; if neither is a phone JID we
+ *  return null and the caller drops the message (approved design:
+ *  "só telefone real, ocultar LID"). */
+function extractPhone(key: EvolutionMessageKey): string | null {
+  for (const jid of [key.remoteJid, key.remoteJidAlt]) {
+    if (jid && jid.endsWith('@s.whatsapp.net')) {
+      const digits = jid.split('@')[0];
+      if (/^\d+$/.test(digits)) return digits;
+    }
+  }
+  return null;
 }
 
-function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | null {
+/** The contact's LID form, when the chat is LID-addressed — captured
+ *  opportunistically so a later presence.update event (which arrives
+ *  addressed ONLY by LID, with no phone alt at all) can be resolved back
+ *  to this contact. Only meaningful for 1:1 chats (mapEvolutionMessage
+ *  only calls this outside the group branch). */
+function extractLid(key: EvolutionMessageKey): string | null {
+  for (const jid of [key.remoteJid, key.remoteJidAlt]) {
+    if (jid && jid.endsWith('@lid')) {
+      const digits = jid.split('@')[0];
+      if (/^\d+$/.test(digits)) return digits;
+    }
+  }
+  return null;
+}
+
+/** In a group message the sender isn't `remoteJid` (that's the group) —
+ *  it's `participant`/`participantAlt`. Same @s.whatsapp.net-preferring
+ *  resolution as extractPhone, but over the participant fields. Returns
+ *  '' when no real phone is available: unlike a 1:1 message, a group
+ *  message is still kept (it belongs to the group), just with an empty
+ *  sender phone. */
+function extractParticipantPhone(key: EvolutionMessageKey): string {
+  for (const jid of [key.participant, key.participantAlt]) {
+    if (jid && jid.endsWith('@s.whatsapp.net')) {
+      const digits = jid.split('@')[0];
+      if (/^\d+$/.test(digits)) return digits;
+    }
+  }
+  return '';
+}
+
+/** Exported for reuse by the one-time history backfill
+ *  (src/lib/channels/history-backfill.ts) — `findEvolutionMessages`'
+ *  records share this exact wire shape with the live
+ *  `messages.upsert` webhook's `data`, so the mapping logic is
+ *  identical for both without duplication. */
+export function mapEvolutionMessage(data: EvolutionUpsertData): NormalizedInbound | null {
+  const isGroup = data.key.remoteJid.endsWith('@g.us');
+
+  // Sender resolution differs by chat type:
+  //   1:1   → `from` is the contact's phone when WhatsApp provides one.
+  //           When it doesn't (LID-addressed with no @s.whatsapp.net alt
+  //           anywhere — investigacao-completude-sync-conversas.md found
+  //           this true for the large majority of @lid chats), `from`
+  //           stays '' and `contactLid` carries the identity instead — a
+  //           contact keyed by LID alone (migration 051) rather than
+  //           dropping the message. Only drop when NEITHER is available;
+  //           that message truly can't be attributed to anyone.
+  //   group → `from` is the PARTICIPANT (sender) phone, best-effort; the
+  //           message is kept regardless (it belongs to the group), and
+  //           `group.jid` carries the conversation key.
+  const resolvedPhone = isGroup ? extractParticipantPhone(data.key) : extractPhone(data.key);
+  const contactLid = isGroup ? null : extractLid(data.key);
+  if (!isGroup && !resolvedPhone && !contactLid) return null;
+  const from: string = resolvedPhone ?? '';
+  const group = isGroup ? { jid: data.key.remoteJid } : undefined;
+
+  // pushName is whoever sent THIS message. Two cases make it NOT a usable
+  // contact name:
+  //   1. fromMe: true — the linked phone sending directly, outside the
+  //      CRM. pushName is then the account owner's own display name, not
+  //      the customer's (confirmed live: 16/41 contacts came back named
+  //      "Você"/the owner's real name after backfill).
+  //   2. pushName equal to the sender number — WhatsApp's placeholder for
+  //      a contact with no saved name; storing it would show a raw digit
+  //      string instead of the nicely-formatted number fallback.
+  const rawName = data.key.fromMe ? undefined : data.pushName;
+  // Drop the name when it's purely digits — WhatsApp's placeholder for
+  // "no name set", whether that's the sender's own resolved phone (1:1)
+  // or some other numeric id, e.g. a LID, reported for a group
+  // participant we couldn't resolve a phone for at all (`from === ''`,
+  // so there's no known phone to compare against — the placeholder is
+  // still recognizable because a real human name is never all digits).
+  const contactName =
+    rawName && !/^\d+$/.test(rawName.trim()) ? rawName : undefined;
   const base = {
-    from: extractPhone(data.key),
-    contactName: data.pushName,
+    from,
+    contactName,
+    contactLid,
+    group,
     providerMessageId: data.key.id,
     timestamp: new Date(data.messageTimestamp * 1000),
     replyToProviderMessageId: data.contextInfo?.stanzaId ?? null,

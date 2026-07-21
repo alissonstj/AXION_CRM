@@ -91,7 +91,7 @@ function resolveSingleVariable(
   if (mapping.type === 'field') {
     const fieldMap: Record<string, string | undefined> = {
       name: contact.name,
-      phone: contact.phone,
+      phone: contact.phone ?? undefined,
       email: contact.email,
       company: contact.company,
     };

@@ -266,6 +266,50 @@ describe('sendMessageToConversation — Evolution provider (full DB path)', () =
   });
 });
 
+describe('sendMessageToConversation — group send', () => {
+  function makeGroupDb(inserted: Record<string, unknown>[]): SupabaseClient {
+    const groupConv = {
+      id: 'gc-1', account_id: 'acct-1', is_group: true,
+      group_jid: '120363427655738502@g.us', contact: null,
+    };
+    let lastTable = '';
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      single: async () => {
+        if (lastTable === 'conversations') return { data: groupConv, error: null };
+        if (lastTable === 'messages') return { data: { id: 'gmsg-1', ...inserted[inserted.length - 1] }, error: null };
+        return { data: null, error: null };
+      },
+      maybeSingle: async () => ({ data: null, error: null }),
+      insert: (row: Record<string, unknown>) => { if (lastTable === 'messages') inserted.push(row); return chain; },
+      update: () => chain,
+    };
+    return { from: (t: string) => { lastTable = t; return chain; } } as unknown as SupabaseClient;
+  }
+
+  it('sends a text to the group JID and persists it as an agent message', async () => {
+    mockSendText.mockReset().mockResolvedValue({ providerMessageId: 'grp-wa-1' });
+    const inserted: Record<string, unknown>[] = [];
+    const result = await sendMessageToConversation(makeGroupDb(inserted), 'acct-1', {
+      conversationId: 'gc-1', messageType: 'text', contentText: 'ola grupo',
+    });
+    expect(mockSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '120363427655738502@g.us', text: 'ola grupo' }),
+    );
+    expect(inserted[0]).toMatchObject({ sender_type: 'agent', content_text: 'ola grupo', message_id: 'grp-wa-1' });
+    expect(result.whatsappMessageId).toBe('grp-wa-1');
+  });
+
+  it('rejects a template send to a group with a clear error', async () => {
+    await expect(
+      sendMessageToConversation(makeGroupDb([]), 'acct-1', {
+        conversationId: 'gc-1', messageType: 'template', templateName: 'promo',
+      }),
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
+  });
+});
+
 describe('SendMessageError', () => {
   it('carries a machine code and an HTTP status', () => {
     const e = new SendMessageError('meta_error', 'boom', 502);

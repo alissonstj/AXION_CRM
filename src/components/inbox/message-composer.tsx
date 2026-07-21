@@ -565,7 +565,7 @@ export function MessageComposer({
   // ---- Render --------------------------------------------------------
 
   return (
-    <div className="border-t border-border bg-card p-3">
+    <div className="border-t border-border bg-[var(--wa-chrome-bg)] p-3">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote
@@ -723,16 +723,33 @@ export function MessageComposer({
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setScheduleOpen(true)}>
-                <CalendarClock className="mr-2 h-4 w-4" />
-                {t("scheduleMessage")}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setScheduledListOpen(true)}>
                 <CalendarDays className="mr-2 h-4 w-4" />
                 {t("scheduledMessages")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Schedule message — promoted out of the "+" menu to its own
+              visible shortcut (WhatsApp-Web-turbinado reference: a
+              calendar icon sits next to "+", not buried in a submenu).
+              Same gating the item had inside "+": disabled whenever the
+              rest of the toolbar is (read-only role or expired session). */}
+          <button
+            type="button"
+            disabled={inputsDisabled}
+            title={
+              readOnly
+                ? t("readOnlyTitle")
+                : inputsDisabled
+                  ? undefined
+                  : t("scheduleMessage")
+            }
+            onClick={() => setScheduleOpen(true)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <CalendarClock className="h-4 w-4" />
+          </button>
 
           <GatedButton
             variant="ghost"
@@ -782,7 +799,7 @@ export function MessageComposer({
             // The placeholder text also surfaces the read-only state.
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+              "flex-1 resize-none rounded-full border border-border bg-muted px-5 py-3 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
               (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
             )}
           />

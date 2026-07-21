@@ -24,30 +24,44 @@ vi.mock('@/lib/channels/sent-by-crm-cache', () => ({ wasSentByCrm: mockWasSentBy
 let mockConfigRow: Record<string, unknown> | null;
 let mockMessageRow: Record<string, unknown> | null;
 let mockRecipientRow: Record<string, unknown> | null;
+let mockContactRow: Record<string, unknown> | null;
+let mockConversationRow: Record<string, unknown> | null;
 let lastMessageUpdate: Record<string, unknown> | null;
 let lastRecipientUpdate: Record<string, unknown> | null;
 let lastContactUpdate: Record<string, unknown> | null;
+let lastConversationUpdate: Record<string, unknown> | null;
+// Records every .eq() call made against `contacts`/`conversations`
+// while resolving a presence.update, in order — lets tests assert
+// which column (phone vs lid) the lookup actually filtered on.
+let eqCallsByTable: Record<string, [string, unknown][]>;
 
 // Table-aware chainable stub. `whatsapp_config` keeps the original
 // single-config behavior; `messages`/`broadcast_recipients` are new,
 // added for the messages.update status-tick handling; `contacts` is
-// new for the avatar-sync hook.
+// new for the avatar-sync hook; `conversations` is new for the
+// presence.update (typing indicator) handling.
 function makeDb() {
   let lastTable = '';
   const chain: Record<string, unknown> = {
     select: () => chain,
-    eq: () => chain,
+    eq: (col: string, val: unknown) => {
+      (eqCallsByTable[lastTable] ??= []).push([col, val]);
+      return chain;
+    },
     limit: () => chain,
     maybeSingle: async () => {
       if (lastTable === 'whatsapp_config') return { data: mockConfigRow, error: null };
       if (lastTable === 'messages') return { data: mockMessageRow, error: null };
       if (lastTable === 'broadcast_recipients') return { data: mockRecipientRow, error: null };
+      if (lastTable === 'contacts') return { data: mockContactRow, error: null };
+      if (lastTable === 'conversations') return { data: mockConversationRow, error: null };
       return { data: null, error: null };
     },
     update: (patch: Record<string, unknown>) => {
       if (lastTable === 'messages') lastMessageUpdate = patch;
       if (lastTable === 'broadcast_recipients') lastRecipientUpdate = patch;
       if (lastTable === 'contacts') lastContactUpdate = patch;
+      if (lastTable === 'conversations') lastConversationUpdate = patch;
       return { eq: async () => ({ error: null }) };
     },
   };
@@ -69,9 +83,13 @@ beforeEach(() => {
   };
   mockMessageRow = null;
   mockRecipientRow = null;
+  mockContactRow = null;
+  mockConversationRow = null;
   lastMessageUpdate = null;
   lastRecipientUpdate = null;
   lastContactUpdate = null;
+  lastConversationUpdate = null;
+  eqCallsByTable = {};
 });
 
 // decrypt('enc:tok') must resolve to a plain token for the apikey check —
@@ -282,5 +300,53 @@ describe('POST /api/channels/evolution/webhook — fromMe: true (CRM echo vs pho
       expect.objectContaining({ fromMe: true }),
       expect.objectContaining({ accountId: 'acc-1', configOwnerUserId: 'user-1' }),
     );
+  });
+});
+
+describe('POST /api/channels/evolution/webhook — presence.update (typing indicator)', () => {
+  function presenceReq(id: string, lastKnownPresence: string) {
+    return POST(req({
+      event: 'presence.update', instance: 'axion-acc1', apikey: 'tok',
+      data: { id, presences: { [id]: { lastKnownPresence } } },
+    }));
+  }
+
+  it('sets conversations.typing_until on a "composing" presence for a phone-addressed contact', async () => {
+    mockContactRow = { id: 'contact-1' };
+    mockConversationRow = { id: 'conv-1' };
+    const res = await presenceReq('556183565665@s.whatsapp.net', 'composing');
+    expect(res.status).toBe(200);
+    expect(eqCallsByTable.contacts).toContainEqual(['phone', '556183565665']);
+    expect(lastConversationUpdate).toHaveProperty('typing_until');
+    expect(typeof lastConversationUpdate?.typing_until).toBe('string');
+  });
+
+  it('resolves a LID-addressed contact by the lid column, not phone', async () => {
+    mockContactRow = { id: 'contact-1' };
+    mockConversationRow = { id: 'conv-1' };
+    await presenceReq('38745604669544@lid', 'composing');
+    expect(eqCallsByTable.contacts).toContainEqual(['lid', '38745604669544']);
+  });
+
+  it('clears typing_until (sets it null) on a non-composing presence', async () => {
+    mockContactRow = { id: 'contact-1' };
+    mockConversationRow = { id: 'conv-1' };
+    await presenceReq('556183565665@s.whatsapp.net', 'available');
+    expect(lastConversationUpdate).toEqual({ typing_until: null });
+  });
+
+  it('no-ops cleanly when no contact matches (still 200, no conversation update)', async () => {
+    mockContactRow = null;
+    const res = await presenceReq('556100000000@s.whatsapp.net', 'composing');
+    expect(res.status).toBe(200);
+    expect(lastConversationUpdate).toBeNull();
+  });
+
+  it('no-ops cleanly when the contact has no 1:1 conversation yet', async () => {
+    mockContactRow = { id: 'contact-1' };
+    mockConversationRow = null;
+    const res = await presenceReq('556183565665@s.whatsapp.net', 'composing');
+    expect(res.status).toBe(200);
+    expect(lastConversationUpdate).toBeNull();
   });
 });

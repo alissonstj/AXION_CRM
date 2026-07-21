@@ -190,14 +190,20 @@ export function ContactDetailView({
   }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
 
   async function copyPhone() {
-    if (!contact) return;
+    if (!contact?.phone) return;
     await navigator.clipboard.writeText(contact.phone);
     setCopiedPhone(true);
     setTimeout(() => setCopiedPhone(false), 2000);
   }
 
   async function saveDetails() {
-    if (!contactId || !editPhone.trim()) {
+    if (!contactId) return;
+
+    // Phone is only required for a contact that has no LID fallback
+    // identity (migration 051) — a LID-only contact must be editable
+    // (e.g. just fixing the name) without ever having a phone.
+    const phoneRequired = !contact?.lid;
+    if (phoneRequired && !editPhone.trim()) {
       toast.error(t('toastPhoneRequired'));
       return;
     }
@@ -207,7 +213,7 @@ export function ContactDetailView({
       .from('contacts')
       .update({
         name: editName.trim() || null,
-        phone: editPhone.trim(),
+        phone: editPhone.trim() || null,
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
         updated_at: new Date().toISOString(),
@@ -468,7 +474,7 @@ export function ContactDetailView({
                   value="tags"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                 >
-                  {t('tabs.tags', { fallback: 'Tags' })}
+                  {t('tabs.tags')}
                 </TabsTrigger>
                 <TabsTrigger
                   value="notes"
@@ -494,7 +500,7 @@ export function ContactDetailView({
               <TabsContent value="details" className="flex-1 overflow-y-auto px-4 py-3">
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('company', { fallback: 'Name' })}</Label>
+                    <Label className="text-muted-foreground text-xs">{t('name')}</Label>
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
@@ -503,7 +509,11 @@ export function ContactDetailView({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs">
-                      {t('phone')} <span className="text-red-400">*</span>
+                      {t('phone')}
+                      {/* Required only for a contact WhatsApp gave us a
+                          phone for in the first place — a LID-only
+                          contact (migration 051) has none to require. */}
+                      {contact?.phone && <span className="text-red-400">*</span>}
                     </Label>
                     <Input
                       value={editPhone}

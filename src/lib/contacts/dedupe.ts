@@ -21,7 +21,8 @@ export function normalizeKey(phone: string): string {
 /** Minimal shape we need back from a contacts lookup. */
 export interface ExistingContact {
   id: string;
-  phone: string;
+  /** Null for a LID-only contact — see findExistingContactByLid. */
+  phone: string | null;
   name?: string | null;
   [key: string]: unknown;
 }
@@ -51,8 +52,35 @@ export async function findExistingContact(
   if (error || !data) return null;
 
   return (
-    (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null
+    (data as ExistingContact[]).find((c) => !!c.phone && phonesMatch(c.phone, phone)) ?? null
   );
+}
+
+/**
+ * Find an existing contact in `accountId` by exact LID match. Unlike
+ * phone, a LID needs no fuzzy trunk-prefix tolerance — it's an opaque
+ * WhatsApp-assigned id, either the exact same string or a different
+ * contact entirely. Used for contacts WhatsApp addresses by @lid with
+ * no phone-number alt ever provided (investigacao-completude-sync-
+ * conversas.md) — `idx_contacts_account_lid_unique` (migration 051) is
+ * the DB-level guarantee this backs.
+ */
+export async function findExistingContactByLid(
+  db: SupabaseClient,
+  accountId: string,
+  lid: string,
+): Promise<ExistingContact | null> {
+  if (!lid) return null;
+
+  const { data, error } = await db
+    .from("contacts")
+    .select("*")
+    .eq("account_id", accountId)
+    .eq("lid", lid)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as ExistingContact;
 }
 
 /**
@@ -61,7 +89,7 @@ export async function findExistingContact(
  * exact matches but only warns on fuzzy ones.
  */
 export function isExactMatch(existing: ExistingContact, phone: string): boolean {
-  return normalizeKey(existing.phone) === normalizeKey(phone);
+  return !!existing.phone && normalizeKey(existing.phone) === normalizeKey(phone);
 }
 
 /**

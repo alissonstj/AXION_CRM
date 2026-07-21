@@ -235,13 +235,20 @@ describe('POST /api/scheduled-messages — conversation_id entry point (Inbox, F
 });
 
 describe('GET /api/scheduled-messages', () => {
-  it('400s when conversation_id is missing', async () => {
+  it('400s when neither conversation_id nor deal_id is provided', async () => {
     const res = await GET(getReq(''));
     expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/conversation_id or deal_id/);
   });
 
   it('lists pending scheduled messages for the given conversation (RLS-scoped)', async () => {
     const res = await GET(getReq('?conversation_id=conv-1'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).scheduled_messages).toEqual(mockScheduledRows);
+  });
+
+  it('lists pending scheduled messages for the given deal_id (Kanban, Fase 2)', async () => {
+    const res = await GET(getReq('?deal_id=deal-1'));
     expect(res.status).toBe(200);
     expect((await res.json()).scheduled_messages).toEqual(mockScheduledRows);
   });

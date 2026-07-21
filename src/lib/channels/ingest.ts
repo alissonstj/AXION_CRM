@@ -1,11 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { normalizePhone } from '@/lib/whatsapp/phone-utils'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { normalizePhone, formatPhoneForDisplay } from '@/lib/whatsapp/phone-utils'
+import { findExistingContact, findExistingContactByLid, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { maybeTranscribeAudioMessage } from './audio-transcription'
 import type { NormalizedInbound } from './types'
 
 // ============================================================
@@ -36,6 +37,12 @@ export interface IngestContext {
    *  swallowed here, matching this function's own best-effort
    *  semantics elsewhere. */
   onContactCreated?: (contact: { id: string; phone: string }) => void
+  /** Fired once, right after a brand-new GROUP conversation row is
+   *  created. The parser doesn't know a group's name/avatar (they aren't
+   *  in the message webhook), so the caller uses this to fetch the group
+   *  subject + picture and fill them in. Best-effort, same swallow-errors
+   *  semantics as onContactCreated. */
+  onGroupCreated?: (conversation: { id: string; groupJid: string }) => void
 }
 
 /**
@@ -52,6 +59,15 @@ export async function ingestInbound(
   inbound: NormalizedInbound,
   ctx: IngestContext,
 ): Promise<void> {
+  // Group (@g.us) messages take a separate path: they belong to a group
+  // conversation (keyed by group JID, no single contact), each message
+  // records its participant sender, and NONE of the customer-facing
+  // dispatch (automations, AI auto-reply, flows, public webhook) runs —
+  // a bot must not react inside a group.
+  if (inbound.group) {
+    return ingestGroupMessage(inbound, ctx)
+  }
+
   const { accountId, configOwnerUserId, db } = ctx
 
   const senderPhone = normalizePhone(inbound.from)
@@ -68,7 +84,8 @@ export async function ingestInbound(
     accountId,
     configOwnerUserId,
     senderPhone,
-    contactName
+    contactName,
+    inbound.contactLid ?? undefined
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
@@ -161,7 +178,9 @@ export async function ingestInbound(
     }
   }
 
-  const contentText = inbound.text ?? null
+  // Reassigned below (audio only) once a transcript comes back — see the
+  // Fase 2 comment at the transcription call site.
+  let contentText = inbound.text ?? null
   const mediaUrl = inbound.mediaUrl ?? null
   const interactiveReplyId = inbound.interactiveReplyId ?? null
 
@@ -192,28 +211,50 @@ export async function ingestInbound(
   // (see supabase/migrations/001_initial_schema.sql):
   //   conversation_id, sender_type, content_type, content_text,
   //   media_url, template_name, message_id, status, created_at
-  const { error: msgError } = await db.from('messages').insert({
-    conversation_id: conversation.id,
-    // A phone-sent message (isFromMe) is ours, same as a CRM send —
-    // record it as 'agent'/'sent', matching send-message.ts's own insert
-    // shape, not as a customer message.
-    sender_type: isFromMe ? 'agent' : 'customer',
-    content_type: contentType,
-    content_text: contentText,
-    media_url: mediaUrl,
-    message_id: inbound.providerMessageId,
-    status: isFromMe ? 'sent' : 'delivered',
-    created_at: inbound.timestamp.toISOString(),
-    reply_to_message_id: replyToInternalId,
-    // Only populated for content_type='interactive'. Migration 010 added
-    // the column; null for every other content_type so existing inserts
-    // behave identically.
-    interactive_reply_id: interactiveReplyId,
-  })
+  const { data: insertedMessage, error: msgError } = await db
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      // A phone-sent message (isFromMe) is ours, same as a CRM send —
+      // record it as 'agent'/'sent', matching send-message.ts's own insert
+      // shape, not as a customer message.
+      sender_type: isFromMe ? 'agent' : 'customer',
+      content_type: contentType,
+      content_text: contentText,
+      media_url: mediaUrl,
+      message_id: inbound.providerMessageId,
+      status: isFromMe ? 'sent' : 'delivered',
+      created_at: inbound.timestamp.toISOString(),
+      reply_to_message_id: replyToInternalId,
+      // Only populated for content_type='interactive'. Migration 010 added
+      // the column; null for every other content_type so existing inserts
+      // behave identically.
+      interactive_reply_id: interactiveReplyId,
+    })
+    .select('id')
+    .single()
 
   if (msgError) {
     console.error('Error inserting message:', msgError)
     return
+  }
+
+  // Fase 1+2 (investigacao-transcricao-audio-ia.md): transcribe an
+  // inbound voice note and save the text as this message's
+  // content_text, so the agent sees a caption under the audio player.
+  // Awaited (small, ~15s timeout budget) but isolated in its own
+  // try/catch — never throws. Reassigning `contentText` here (Fase 2)
+  // means the transcript flows into the exact same automations/flow/
+  // AI-dispatch logic further down that a plain text message already
+  // goes through — no special-casing needed there. Customer-sent audio
+  // only; not our own phone-relayed voice notes.
+  if (!isFromMe && contentType === 'audio' && mediaUrl) {
+    const transcript = await maybeTranscribeAudioMessage(db, {
+      accountId,
+      messageId: insertedMessage.id,
+      audioUrl: mediaUrl,
+    })
+    if (transcript) contentText = transcript
   }
 
   // Update conversation
@@ -222,14 +263,33 @@ export async function ingestInbound(
     .update({
       last_message_text: contentText || `[${inbound.kind}]`,
       last_message_at: new Date().toISOString(),
-      // A phone-sent message doesn't need to notify us of itself.
-      unread_count: isFromMe ? (conversation.unread_count || 0) : (conversation.unread_count || 0) + 1,
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id)
 
   if (convError) {
     console.error('Error updating conversation:', convError)
+  }
+
+  // Atomic increment — NOT a read-then-write on `conversation.unread_count`
+  // (the value read earlier, when this conversation was resolved). Two
+  // inbound messages for the same conversation processed concurrently
+  // (a customer sending several messages seconds apart, each its own
+  // webhook delivery) would otherwise both read the same stale count and
+  // both write back N+1, permanently losing one bump — this is the exact
+  // "unread badge sometimes doesn't show" inconsistency investigated in
+  // investigacao-indicadores-lista-conversas.md, and the same lost-update
+  // race already fixed once in this codebase for
+  // automations.execution_count (migration 007). A phone-sent message
+  // doesn't need to notify us of itself, so it's skipped entirely rather
+  // than incrementing by zero.
+  if (!isFromMe) {
+    const { error: rpcError } = await db.rpc('increment_conversation_unread', {
+      p_conversation_id: conversation.id,
+    })
+    if (rpcError) {
+      console.error('Error incrementing conversation unread_count:', rpcError)
+    }
   }
 
   // Everything below this point (broadcast-reply flagging, the flow
@@ -363,6 +423,170 @@ export async function ingestInbound(
     content_type: contentType,
     text: contentText,
   })
+}
+
+// ============================================================
+// Group message ingestion (@g.us). Deliberately separate from the 1:1
+// path: a group has no single contact, its messages carry a per-message
+// participant sender, and it must never trigger automations/AI/flows or
+// the public webhook (a bot replying inside a group is almost never
+// wanted — see the group-support design). The allowed content_type set
+// mirrors the 1:1 path's mapping.
+// ============================================================
+const GROUP_ALLOWED_CONTENT_TYPES = new Set([
+  'text', 'image', 'document', 'audio', 'video',
+  'location', 'template', 'interactive',
+])
+
+async function ingestGroupMessage(
+  inbound: NormalizedInbound,
+  ctx: IngestContext,
+): Promise<void> {
+  const { accountId, configOwnerUserId, db } = ctx
+  const group = inbound.group
+  if (!group) return
+
+  const convResult = await findOrCreateGroupConversation(
+    db, accountId, configOwnerUserId, group.jid, group.name ?? null,
+  )
+  if (!convResult) return
+  const conversation = convResult.conversation
+
+  if (convResult.created) {
+    try {
+      ctx.onGroupCreated?.({ id: conversation.id, groupJid: group.jid })
+    } catch (err) {
+      console.error('[ingest] onGroupCreated hook threw:', err)
+    }
+    await dispatchWebhookEvent(db, accountId, 'conversation.created', {
+      conversation_id: conversation.id,
+      contact_id: null,
+    })
+  }
+
+  // Reactions inside groups aren't handled in this pass — they're
+  // per-(target, actor) state and the group reaction UI isn't built yet.
+  if (inbound.kind === 'reaction') return
+
+  // Idempotency guard, same (conversation_id, message_id) scope as the
+  // 1:1 path — Evolution redelivers group webhooks too.
+  const { data: existingDelivery } = await db
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversation.id)
+    .eq('message_id', inbound.providerMessageId)
+    .limit(1)
+    .maybeSingle()
+  if (existingDelivery) return
+
+  const isFromMe = inbound.fromMe === true
+  const contentText = inbound.text ?? null
+  const mappedType = inbound.kind === 'interactive_reply' ? 'interactive' : inbound.kind
+  const contentType = GROUP_ALLOWED_CONTENT_TYPES.has(mappedType) ? mappedType : 'text'
+
+  // Sender identity within the group — only for messages FROM a
+  // participant. Our own (fromMe) group messages are agent-sent and
+  // carry no participant identity.
+  const senderPhone = isFromMe || !inbound.from ? null : normalizePhone(inbound.from)
+  const senderName = isFromMe ? null : (inbound.contactName ?? null)
+
+  const { error: msgError } = await db.from('messages').insert({
+    conversation_id: conversation.id,
+    sender_type: isFromMe ? 'agent' : 'customer',
+    content_type: contentType,
+    content_text: contentText,
+    media_url: inbound.mediaUrl ?? null,
+    message_id: inbound.providerMessageId,
+    status: isFromMe ? 'sent' : 'delivered',
+    created_at: inbound.timestamp.toISOString(),
+    sender_participant_name: senderName,
+    sender_participant_phone: senderPhone,
+  })
+  if (msgError) {
+    console.error('[ingest] group message insert failed:', msgError.message)
+    return
+  }
+
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: contentText || `[${inbound.kind}]`,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
+
+  // Atomic increment — see the doc comment on the 1:1 path above for why
+  // this can't be a read-then-write on `conversation.unread_count`.
+  if (!isFromMe) {
+    await db.rpc('increment_conversation_unread', { p_conversation_id: conversation.id })
+  }
+  // Intentionally NO flow/automation/AI/public-webhook dispatch here.
+}
+
+/** Exported for reuse by the history backfill — find-or-create a group
+ *  conversation by its @g.us JID (groups have no single contact, so the
+ *  1:1 findOrCreateConversation doesn't apply). Updates group_name when a
+ *  newly-known name differs from what's stored. */
+export async function findOrCreateGroupConversation(
+  db: SupabaseClient,
+  accountId: string,
+  configOwnerUserId: string,
+  groupJid: string,
+  groupName: string | null,
+) {
+  const { data: existingRows, error: findError } = await db
+    .from('conversations')
+    .select('*')
+    .eq('account_id', accountId)
+    .eq('group_jid', groupJid)
+    .order('created_at', { ascending: true })
+    .limit(1)
+
+  if (findError) {
+    console.error('[ingest] find group conversation failed:', findError.message)
+    return null
+  }
+
+  if (existingRows && existingRows.length > 0) {
+    const existing = existingRows[0]
+    if (groupName && existing.group_name !== groupName) {
+      await db.from('conversations').update({ group_name: groupName }).eq('id', existing.id)
+      existing.group_name = groupName
+    }
+    return { conversation: existing, created: false }
+  }
+
+  const { data: newConv, error: createError } = await db
+    .from('conversations')
+    .insert({
+      account_id: accountId,
+      user_id: configOwnerUserId,
+      contact_id: null,
+      is_group: true,
+      group_jid: groupJid,
+      group_name: groupName,
+    })
+    .select()
+    .single()
+
+  if (createError) {
+    // Lost a race — a concurrent delivery created the group conversation.
+    if (isUniqueViolation(createError)) {
+      const { data: raced } = await db
+        .from('conversations')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('group_jid', groupJid)
+        .order('created_at', { ascending: true })
+        .limit(1)
+      if (raced && raced.length > 0) return { conversation: raced[0], created: false }
+    }
+    console.error('[ingest] create group conversation failed:', createError.message)
+    return null
+  }
+
+  return { conversation: newConv, created: true }
 }
 
 /**
@@ -512,13 +736,33 @@ interface ContactOutcome {
   wasCreated: boolean
 }
 
-async function findOrCreateContact(
+/** Exported for reuse by the one-time history backfill
+ *  (history-backfill.ts) — same find-or-create semantics apply to a
+ *  historical chat's participant as to a live inbound sender. */
+export async function findOrCreateContact(
   db: SupabaseClient,
   accountId: string,
   configOwnerUserId: string,
   phone: string,
-  name: string
+  name: string,
+  /** The contact's LID form, when this inbound was LID-addressed
+   *  (migration 049). Opportunistically captured/backfilled so a later
+   *  presence.update event — addressed only by LID, no phone alt — can
+   *  be resolved back to this contact. Optional: most call sites (and
+   *  all phone-addressed inbounds) have none. */
+  lid?: string
 ): Promise<ContactOutcome | null> {
+  // No resolvable phone (investigacao-completude-sync-conversas.md —
+  // @lid-addressed chats where WhatsApp never provided a phone alt,
+  // roughly half of one live account's chats) — identify by LID alone
+  // instead of dropping the message. mapEvolutionMessage only omits
+  // `from` when it already found no phone at all; a lid is required
+  // here too, or there's truly nothing to key the contact on.
+  if (!phone) {
+    if (!lid) return null
+    return findOrCreateContactByLid(db, accountId, configOwnerUserId, lid, name)
+  }
+
   // Find an existing contact for this account by phone. The shared
   // helper pre-filters in SQL by the last-8-digit suffix (so we don't
   // pull every contact on every inbound message) then applies the
@@ -528,12 +772,19 @@ async function findOrCreateContact(
   const existingContact = await findExistingContact(db, accountId, phone)
 
   if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
-      await db
+    // Patch whichever of name/lid changed — a single update, not two
+    // round trips, when both happen to change at once.
+    const patch: Record<string, unknown> = {}
+    if (name && name !== existingContact.name) patch.name = name
+    if (lid && lid !== existingContact.lid) patch.lid = lid
+    if (Object.keys(patch).length > 0) {
+      const { error: patchError } = await db
         .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
+      if (patchError) {
+        console.error('[ingest] contact name/lid patch failed:', patchError.message, { contactId: existingContact.id, patch })
+      }
     }
     return { contact: existingContact, wasCreated: false }
   }
@@ -548,7 +799,10 @@ async function findOrCreateContact(
       account_id: accountId,
       user_id: configOwnerUserId,
       phone,
-      name: name || phone,
+      // No name known → show the number the way WhatsApp shows an
+      // unsaved contact ("+55 61 8888-5665"), not the raw digit string.
+      name: name || formatPhoneForDisplay(phone),
+      lid: lid ?? null,
     })
     .select()
     .single()
@@ -569,7 +823,63 @@ async function findOrCreateContact(
   return { contact: newContact, wasCreated: true }
 }
 
-async function findOrCreateConversation(
+/** LID-only variant of findOrCreateContact, for a chat WhatsApp never
+ *  gave us a phone-number alt for (see findOrCreateContact's doc
+ *  comment). Same find-or-create-with-race-retry shape, keyed on
+ *  `lid` instead of `phone` — `idx_contacts_account_lid_unique`
+ *  (migration 051) is the DB-level guarantee backing the race retry. */
+async function findOrCreateContactByLid(
+  db: SupabaseClient,
+  accountId: string,
+  configOwnerUserId: string,
+  lid: string,
+  name: string,
+): Promise<ContactOutcome | null> {
+  const existingContact = await findExistingContactByLid(db, accountId, lid)
+
+  if (existingContact) {
+    if (name && name !== existingContact.name) {
+      const { error: patchError } = await db
+        .from('contacts')
+        .update({ name, updated_at: new Date().toISOString() })
+        .eq('id', existingContact.id)
+      if (patchError) {
+        console.error('[ingest] lid contact name patch failed:', patchError.message, { contactId: existingContact.id })
+      }
+    }
+    return { contact: existingContact, wasCreated: false }
+  }
+
+  const { data: newContact, error: createError } = await db
+    .from('contacts')
+    .insert({
+      account_id: accountId,
+      user_id: configOwnerUserId,
+      phone: null,
+      // No phone to format as a fallback label here (unlike the phone
+      // path) — pushName covers the common case; this is the rare
+      // remainder.
+      name: name || 'Contato sem nome',
+      lid,
+    })
+    .select()
+    .single()
+
+  if (createError) {
+    if (isUniqueViolation(createError)) {
+      const raced = await findExistingContactByLid(db, accountId, lid)
+      if (raced) return { contact: raced, wasCreated: false }
+    }
+    console.error('Error creating LID-only contact:', createError)
+    return null
+  }
+
+  return { contact: newContact, wasCreated: true }
+}
+
+/** Exported for reuse by the one-time history backfill — see
+ *  findOrCreateContact's doc comment above. */
+export async function findOrCreateConversation(
   db: SupabaseClient,
   accountId: string,
   configOwnerUserId: string,

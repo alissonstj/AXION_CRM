@@ -27,13 +27,6 @@ interface DispatchArgs {
   triggeringProviderMessageId?: string
 }
 
-/** Random delay in [4000, 5000) ms before the AI's reply is actually
- *  sent — simulates human typing latency rather than an instant reply.
- *  Randomized (not fixed) so it doesn't read as an obviously robotic,
- *  identical-every-time pause. */
-function simulatedTypingDelayMs(): number {
-  return 4000 + Math.floor(Math.random() * 1000)
-}
 
 /**
  * AI auto-reply for a freshly-arrived inbound message.
@@ -201,7 +194,7 @@ export async function dispatchInboundToAiReply(
       contactId,
       text,
       aiGenerated: true,
-      simulateTypingMs: simulatedTypingDelayMs(),
+      simulateTypingMs: config.replyDelaySeconds * 1000,
       contextProviderMessageId: triggeringProviderMessageId,
     })
   } catch (err) {

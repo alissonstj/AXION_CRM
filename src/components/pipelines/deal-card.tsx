@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X, CalendarClock } from "lucide-react";
-import { formatCurrency } from "@/lib/currency";
+import { CalendarClock, CalendarDays, DollarSign, MessageCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { createClient } from "@/lib/supabase/client";
+import { formatMessagePreview } from "@/lib/inbox/message-preview";
 import { ScheduleMessageModal } from "@/components/scheduling/schedule-message-modal";
+import { ScheduledMessagesListModal } from "@/components/scheduling/scheduled-messages-list-modal";
 
 interface DealCardProps {
   deal: Deal;
@@ -14,15 +17,7 @@ interface DealCardProps {
   isOverlay?: boolean;
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function initials(name?: string, fallback?: string) {
+function initials(name?: string | null, fallback?: string | null) {
   const source = (name || fallback || "?").trim();
   if (!source) return "?";
   return source.charAt(0).toUpperCase();
@@ -30,13 +25,61 @@ function initials(name?: string, fallback?: string) {
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
+  const tPreview = useTranslations("MessagePreview");
+  const router = useRouter();
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledListOpen, setScheduledListOpen] = useState(false);
+
+  // Last-message preview + the conversation's own id (for the WhatsApp
+  // shortcut below), Inbox-list style — see message-preview.ts. `null`
+  // = still loading. Looked up by `contact_id` (always present, NOT
+  // NULL on deals) rather than `deal.conversation_id`, which is
+  // nullable and left unset by the automation-created-deal path
+  // (create_deal in automations/engine.ts) — contact_id resolves to
+  // the same canonical conversation either way (see
+  // findOrCreateConversation in ingest.ts), so this also covers
+  // automation-created deals `deal.conversation_id` alone would miss.
+  const [conversation, setConversation] = useState<
+    { id: string; last_message_text: string | null } | null | undefined
+  >(null);
+  useEffect(() => {
+    if (!deal.contact_id) {
+      setConversation(undefined);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      const { data } = await supabase
+        .from("conversations")
+        .select("id, last_message_text")
+        .eq("contact_id", deal.contact_id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled) setConversation(data ?? undefined);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [deal.contact_id]);
+
+  const preview =
+    conversation === null
+      ? null
+      : formatMessagePreview(conversation?.last_message_text, tPreview);
+  const conversationId = deal.conversation_id || conversation?.id || null;
 
   const handleEdit = () => {
     if (isOverlay) return;
     onEdit(deal);
+  };
+
+  const handleOpenConversation = () => {
+    if (!conversationId) return;
+    router.push(`/inbox?c=${conversationId}`);
   };
 
   return (
@@ -76,11 +119,45 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           style={{ backgroundColor: stage?.color ?? "#94a3b8" }}
         />
 
-        <div className="flex items-start justify-between gap-2">
-          <h4 className="flex-1 text-sm font-semibold leading-snug text-foreground break-words">
-            {deal.title}
-          </h4>
-          {deal.contact_id && !isOverlay && (
+        {/* Row 1 — contact avatar + contact name (Inbox-list style,
+            not the deal's own title — the title/value still show when
+            the deal editor opens). Assignee avatar sits top-right,
+            discreet: no label, just initials + a tooltip. */}
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
+            {initials(deal.contact?.name, deal.contact?.phone)}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+            {contactLabel}
+          </span>
+          {assigneeLabel && (
+            <span
+              title={assigneeLabel}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary"
+            >
+              {initials(assigneeLabel)}
+            </span>
+          )}
+        </div>
+
+        {/* Row 2 — last-message preview, same icon+text formatting as
+            the Inbox conversation list (message-preview.ts), aligned
+            under the contact name (pl-8 matches avatar width + gap). */}
+        <div className="mt-1 flex items-center gap-1 pl-8 text-xs text-muted-foreground">
+          {preview && (
+            <>
+              <preview.Icon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{preview.text}</span>
+            </>
+          )}
+        </div>
+
+        {/* Row 3 — footer quick-action icons, compact and aligned under
+            the contact name. Same stopPropagation-inside-role="button"
+            pattern as before — no provider indicator (no discriminant
+            value while accounts are single-channel). */}
+        {deal.contact_id && !isOverlay && (
+          <div className="mt-1 flex items-center gap-0.5 pl-8">
             <button
               type="button"
               title={t("scheduleMessage")}
@@ -89,63 +166,69 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
                 e.stopPropagation();
                 setScheduleOpen(true);
               }}
-              className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
             >
               <CalendarClock className="h-3.5 w-3.5" />
             </button>
-          )}
-          {deal.status === "won" && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-              <Check className="h-3 w-3" />
-              {t("won")}
-            </span>
-          )}
-          {deal.status === "lost" && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-              <X className="h-3 w-3" />
-              {t("lost")}
-            </span>
-          )}
-        </div>
-
-        {/* Contact row */}
-        <div className="mt-2 flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
-            {initials(deal.contact?.name, deal.contact?.phone)}
-          </span>
-          <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
-        </div>
-
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm font-bold text-primary">
-            {formatCurrency(deal.value, deal.currency)}
-          </span>
-          {deal.expected_close_date && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Calendar className="h-3 w-3" />
-              {formatDate(deal.expected_close_date)}
-            </span>
-          )}
-        </div>
-
-        {assigneeLabel && (
-          <div className="mt-2 flex items-center justify-end">
-            <span
-              title={assigneeLabel}
-              className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
+            <button
+              type="button"
+              title={t("scheduledMessages")}
+              aria-label={t("scheduledMessages")}
+              onClick={(e) => {
+                e.stopPropagation();
+                setScheduledListOpen(true);
+              }}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
             >
-              {initials(assigneeLabel)}
-            </span>
+              <CalendarDays className="h-3.5 w-3.5" />
+            </button>
+            {/* Value — no dedicated value-only view exists, so this
+                opens the same full deal editor the card body itself
+                opens (handleEdit); the button is here purely so the
+                value is one click away without occupying its own line
+                in the card body (see the earlier value-removal pass). */}
+            <button
+              type="button"
+              title={t("editValue")}
+              aria-label={t("editValue")}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEdit();
+              }}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            >
+              <DollarSign className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title={conversationId ? t("openConversation") : t("noConversationYet")}
+              aria-label={conversationId ? t("openConversation") : t("noConversationYet")}
+              disabled={!conversationId}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenConversation();
+              }}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
       </div>
 
       {deal.contact_id && (
-        <ScheduleMessageModal
-          open={scheduleOpen}
-          onOpenChange={setScheduleOpen}
-          dealId={deal.id}
-        />
+        <>
+          <ScheduleMessageModal
+            open={scheduleOpen}
+            onOpenChange={setScheduleOpen}
+            dealId={deal.id}
+          />
+          <ScheduledMessagesListModal
+            open={scheduledListOpen}
+            onOpenChange={setScheduledListOpen}
+            dealId={deal.id}
+          />
+        </>
       )}
     </>
   );

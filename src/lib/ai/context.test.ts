@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildConversationContext } from './context'
 
@@ -9,6 +9,7 @@ function fakeDb(rows: unknown[]): SupabaseClient {
     from: () => chain,
     select: () => chain,
     eq: () => chain,
+    in: () => chain,
     order: () => chain,
     limit: () => Promise.resolve({ data: rows, error: null }),
   }
@@ -49,5 +50,27 @@ describe('buildConversationContext', () => {
       'conv-1',
     )
     expect(out).toEqual([{ role: 'user', content: 'real' }])
+  })
+
+  it('queries both text and audio content types, so a transcribed voice note is included', async () => {
+    const inSpy = vi.fn(() => chain)
+    const chain = {
+      from: () => chain,
+      select: () => chain,
+      eq: () => chain,
+      in: inSpy,
+      order: () => chain,
+      limit: () =>
+        Promise.resolve({
+          data: [{ sender_type: 'customer', content_text: 'quanto custa o plano premium?' }],
+          error: null,
+        }),
+    }
+    const out = await buildConversationContext(chain as unknown as SupabaseClient, 'conv-1')
+
+    expect(inSpy).toHaveBeenCalledWith('content_type', ['text', 'audio'])
+    expect(out).toEqual([
+      { role: 'user', content: 'quanto custa o plano premium?' },
+    ])
   })
 })

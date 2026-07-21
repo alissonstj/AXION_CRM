@@ -15,6 +15,8 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Pencil,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,16 +36,27 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [savingTagId, setSavingTagId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  // Inline name edit — a local override so a fix is visible immediately
+  // without needing the parent (which owns the `contact` prop) to
+  // refetch. Reset whenever the underlying contact changes (switching
+  // conversations), so a stale edit from a previous contact can't leak.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, this contact's tags, and every tag the
+    // account has defined (for the toggle list below) in parallel.
+    const [dealsRes, notesRes, tagsRes, allTagsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -58,6 +71,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase.from("tags").select("*").order("name"),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
@@ -71,7 +85,42 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
+    if (allTagsRes.data) setAllTags(allTagsRes.data);
   }, [contact]);
+
+  const toggleTag = useCallback(
+    async (tagId: string) => {
+      if (!contact) return;
+      setSavingTagId(tagId);
+
+      const existing = tags.find((t) => t.id === tagId);
+      const supabase = createClient();
+
+      if (existing) {
+        const { error } = await supabase
+          .from("contact_tags")
+          .delete()
+          .eq("id", existing.contact_tag_id);
+        if (!error) {
+          setTags((prev) => prev.filter((t) => t.id !== tagId));
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("contact_tags")
+          .insert({ contact_id: contact.id, tag_id: tagId })
+          .select("id, tags(*)")
+          .single();
+        if (!error && data?.tags) {
+          setTags((prev) => [
+            ...prev,
+            { ...(data.tags as unknown as Tag), contact_tag_id: data.id as string },
+          ]);
+        }
+      }
+      setSavingTagId(null);
+    },
+    [contact, tags],
+  );
 
   // Load on contact change. setContactData/setTags run inside async
   // Supabase callbacks, not synchronously in the effect body.
@@ -79,6 +128,43 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  // Switching conversations must drop any in-progress/just-saved name
+  // edit for the PREVIOUS contact — otherwise it would leak onto the
+  // newly-selected one's display.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditingName(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNameOverride(null);
+  }, [contact?.id]);
+
+  const startEditName = useCallback(() => {
+    if (!contact) return;
+    setNameDraft(nameOverride ?? contact.name ?? "");
+    setEditingName(true);
+  }, [contact, nameOverride]);
+
+  const cancelEditName = useCallback(() => {
+    setEditingName(false);
+  }, []);
+
+  const saveEditName = useCallback(async () => {
+    if (!contact) return;
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+    setSavingName(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("contacts")
+      .update({ name: trimmed, updated_at: new Date().toISOString() })
+      .eq("id", contact.id);
+    setSavingName(false);
+    if (!error) {
+      setNameOverride(trimmed);
+      setEditingName(false);
+    }
+  }, [contact, nameDraft]);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -127,7 +213,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = nameOverride || contact.name || contact.phone || tSidebar("unnamedContact");
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
@@ -147,28 +233,71 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 initials
               )}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-foreground">
-              {displayName}
-            </h3>
+            {editingName ? (
+              <div className="mt-3 flex w-full items-center gap-1 px-2">
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveEditName();
+                    if (e.key === "Escape") cancelEditName();
+                  }}
+                  disabled={savingName}
+                  className="min-w-0 flex-1 rounded-md border border-border bg-muted px-2 py-1 text-center text-sm text-foreground outline-none focus:border-primary/50"
+                />
+                <button
+                  onClick={saveEditName}
+                  disabled={savingName || !nameDraft.trim()}
+                  aria-label={tSidebar("saveName")}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-primary hover:bg-muted disabled:opacity-50"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={cancelEditName}
+                  disabled={savingName}
+                  aria-label={tSidebar("cancelEditName")}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startEditName}
+                title={tSidebar("editName")}
+                className="group mt-3 flex items-center gap-1.5 rounded-md px-2 py-0.5 hover:bg-muted"
+              >
+                <h3 className="text-sm font-semibold text-foreground">
+                  {displayName}
+                </h3>
+                <Pencil className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+              </button>
+            )}
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
             )}
           </div>
 
-          {/* Phone */}
+          {/* Phone — absent for a contact WhatsApp only ever addressed
+              by @lid, with no phone-number alt provided (migration
+              051); shows once WhatsApp reveals it. */}
           <div className="mt-4 space-y-2">
-            <button
-              onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{contact.phone}</span>
-              {copied ? (
-                <Check className="h-3 w-3 text-primary" />
-              ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
-              )}
-            </button>
+            {contact.phone && (
+              <button
+                onClick={handleCopyPhone}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">{contact.phone}</span>
+                {copied ? (
+                  <Check className="h-3 w-3 text-primary" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            )}
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
@@ -188,21 +317,33 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               {tSidebar("tags")}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              {tags.length === 0 ? (
+              {allTags.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTags")}</p>
               ) : (
-                tags.map((tag) => (
-                  <span
-                    key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    style={{
-                      backgroundColor: `${tag.color}20`,
-                      color: tag.color,
-                    }}
-                  >
-                    {tag.name}
-                  </span>
-                ))
+                allTags.map((tag) => {
+                  const selected = tags.some((t) => t.id === tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                      disabled={savingTagId === tag.id}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-opacity",
+                        selected
+                          ? "ring-1 ring-inset ring-current"
+                          : "opacity-40 hover:opacity-70",
+                      )}
+                      style={{
+                        backgroundColor: `${tag.color}20`,
+                        color: tag.color,
+                      }}
+                    >
+                      {selected && <Check className="h-2.5 w-2.5" />}
+                      {tag.name}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

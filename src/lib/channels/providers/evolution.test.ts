@@ -5,7 +5,8 @@ import {
   TEXT_INBOUND_SAMPLE, FROM_ME_ECHO_SAMPLE, IMAGE_INBOUND_SAMPLE, AUDIO_INBOUND_SAMPLE,
   VIDEO_GROUP_SAMPLE, DOCUMENT_INBOUND_SAMPLE, LOCATION_INBOUND_SAMPLE, REACTION_INBOUND_SAMPLE,
   BUTTON_REPLY_INBOUND_SAMPLE, CONNECTION_UPDATE_ERROR_SAMPLE, REPLY_INBOUND_SAMPLE,
-  STICKER_INBOUND_SAMPLE,
+  STICKER_INBOUND_SAMPLE, LID_WITH_ALT_INBOUND_SAMPLE, LID_NO_ALT_INBOUND_SAMPLE,
+  NEWSLETTER_INBOUND_SAMPLE,
 } from './__fixtures__/evolution-webhook-samples';
 
 const config = { baseUrl: 'http://evo.local', apiKey: 'instance-token', instanceName: 'axion-acc1' };
@@ -276,8 +277,126 @@ describe('EvolutionProvider.parseWebhook', () => {
     expect(inbound.fromMe).toBe(false);
   });
 
-  it('drops group messages entirely', () => {
-    expect(provider.parseWebhook(VIDEO_GROUP_SAMPLE)).toEqual([]);
+  it('does not use pushName as contactName on a fromMe message — pushName there is the account owner\'s own name, not the customer\'s', () => {
+    const [inbound] = provider.parseWebhook(FROM_ME_ECHO_SAMPLE);
+    expect(inbound.contactName).toBeUndefined();
+  });
+
+  it('still uses pushName as contactName for a genuine customer inbound', () => {
+    const [inbound] = provider.parseWebhook(TEXT_INBOUND_SAMPLE);
+    expect(inbound.contactName).toBe('Test Customer');
+  });
+
+  it('treats a pushName equal to the phone number as no name (WhatsApp placeholder for an unnamed contact)', () => {
+    const sample = {
+      event: 'messages.upsert',
+      instance: 'axion-test',
+      data: {
+        key: { remoteJid: '556182241120@s.whatsapp.net', fromMe: false, id: 'ANON-NUMNAME', participant: '' },
+        pushName: '556182241120',
+        message: { conversation: 'oi' },
+        messageType: 'conversation',
+        messageTimestamp: 1784161500,
+      },
+    };
+    const [inbound] = provider.parseWebhook(sample);
+    expect(inbound.contactName).toBeUndefined();
+  });
+
+  it('parses a group message: group.jid is the @g.us chat, from/contactName are the participant sender', () => {
+    const [inbound] = provider.parseWebhook(VIDEO_GROUP_SAMPLE);
+    expect(inbound).toBeDefined();
+    expect(inbound.group).toEqual({ jid: '120363427655738502@g.us' });
+    // participant sender resolved from participantAlt (real phone), not the LID
+    expect(inbound.from).toBe('5511900000003');
+    expect(inbound.contactName).toBe('Group Member');
+    expect(inbound.kind).toBe('video');
+  });
+
+  it('treats a purely-numeric pushName as no name even when the participant has no resolvable phone to compare against (e.g. WhatsApp reporting a LID-based placeholder)', () => {
+    const sample = {
+      event: 'messages.upsert',
+      instance: 'axion-test',
+      data: {
+        key: {
+          remoteJid: '120363427655738502@g.us',
+          fromMe: false,
+          id: 'ANON-GRP-NUMID',
+          participant: '18404069118111@lid', // no participantAlt → from is ''
+        },
+        pushName: '18404069118111',
+        message: { conversation: 'oi' },
+        messageType: 'conversation',
+        messageTimestamp: 1784161700,
+      },
+    };
+    const [inbound] = provider.parseWebhook(sample);
+    expect(inbound.contactName).toBeUndefined();
+    expect(inbound.from).toBe('');
+  });
+
+  it('keeps a group message even when the participant has no resolvable phone (belongs to the group regardless)', () => {
+    const sample = {
+      event: 'messages.upsert',
+      instance: 'axion-test',
+      data: {
+        key: {
+          remoteJid: '120363427655738502@g.us',
+          fromMe: false,
+          id: 'ANON-GRP-NOPHONE',
+          participant: '77193514381384@lid', // LID only, no participantAlt
+          addressingMode: 'lid',
+        },
+        pushName: 'Sem Telefone',
+        message: { conversation: 'ola grupo' },
+        messageType: 'conversation',
+        messageTimestamp: 1784161600,
+      },
+    };
+    const [inbound] = provider.parseWebhook(sample);
+    expect(inbound).toBeDefined();
+    expect(inbound.group).toEqual({ jid: '120363427655738502@g.us' });
+    expect(inbound.contactName).toBe('Sem Telefone');
+    expect(inbound.from).toBe(''); // no phone, but message is kept
+  });
+
+  it('resolves the real phone from remoteJidAlt on a LID-addressed inbound (never the LID digits)', () => {
+    const [inbound] = provider.parseWebhook(LID_WITH_ALT_INBOUND_SAMPLE);
+    expect(inbound).toBeDefined();
+    expect(inbound.from).toBe('556183565665');
+  });
+
+  it('also captures the contact LID on a LID-addressed inbound, for later presence.update resolution', () => {
+    const [inbound] = provider.parseWebhook(LID_WITH_ALT_INBOUND_SAMPLE);
+    expect(inbound.contactLid).toBe('224876350689405');
+  });
+
+  it('leaves contactLid unset for a plain phone-addressed inbound (no LID involved)', () => {
+    const [inbound] = provider.parseWebhook(TEXT_INBOUND_SAMPLE);
+    expect(inbound.contactLid).toBeFalsy();
+  });
+
+  it('keeps a LID-addressed inbound with no phone alt — no phone, but identified by LID (investigacao-completude-sync-conversas.md)', () => {
+    const [inbound] = provider.parseWebhook(LID_NO_ALT_INBOUND_SAMPLE);
+    expect(inbound).toBeDefined();
+    expect(inbound.from).toBe('');
+    expect(inbound.contactLid).toBe('175441461657751');
+    expect(inbound.text).toBe('mensagem so com lid');
+  });
+
+  it('still drops a 1:1 inbound with neither a resolvable phone nor a LID at all', () => {
+    const noIdentity = {
+      ...LID_NO_ALT_INBOUND_SAMPLE,
+      data: {
+        ...LID_NO_ALT_INBOUND_SAMPLE.data,
+        key: { ...LID_NO_ALT_INBOUND_SAMPLE.data.key, remoteJid: 'not-a-real-jid' },
+      },
+    };
+    expect(provider.parseWebhook(noIdentity)).toEqual([]);
+  });
+
+  it('drops newsletter/channel messages entirely (only @g.us was filtered before)', () => {
+    expect(provider.parseWebhook(NEWSLETTER_INBOUND_SAMPLE)).toEqual([]);
   });
 
   it('maps an image inbound with base64 + mimetype + caption', () => {

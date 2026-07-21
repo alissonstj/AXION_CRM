@@ -4,13 +4,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // so the vi.mock factory below can close over it.
 const h = vi.hoisted(() => ({
   state: {
-    owned: null as { id: string } | null,
+    owned: null as { id: string; name?: string | null; phone?: string | null } | null,
     ownedCustomField: null as { id: string } | null,
     automations: [] as Record<string, unknown>[],
     steps: [] as Record<string, unknown>[],
     fromCalls: [] as string[],
     updateCalls: [] as { table: string; filters: [string, string, unknown][] }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
+    existingOpenDeals: [] as { id: string }[],
+    dealInsertCalls: [] as Record<string, unknown>[],
+    dealInsertError: null as { code: string; message: string } | null,
+    logUpdateCalls: [] as Record<string, unknown>[],
   },
 }));
 
@@ -43,10 +47,22 @@ vi.mock("./admin-client", () => {
       }
       return { data: null, error: null };
     }
+    if (table === "deals") {
+      if (type === "insert") {
+        state.dealInsertCalls.push(ops.payload as Record<string, unknown>);
+        return { data: null, error: state.dealInsertError };
+      }
+      // create_deal's pre-insert dedup check (Fase C) — a .limit(1) array
+      // read (never .maybeSingle(), which throws once 2+ rows match).
+      return { data: state.existingOpenDeals, error: null };
+    }
     if (table === "automations") return { data: state.automations, error: null };
     if (table === "automation_logs") {
       if (type === "insert") return { data: { id: "log1" }, error: null };
-      if (type === "update") return { data: null, error: null };
+      if (type === "update") {
+        state.logUpdateCalls.push(ops.payload as Record<string, unknown>);
+        return { data: null, error: null };
+      }
       return { data: { steps_executed: [], status: "success" }, error: null };
     }
     if (table === "automation_steps") return { data: state.steps, error: null };
@@ -109,6 +125,10 @@ beforeEach(() => {
   h.state.fromCalls = [];
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
+  h.state.existingOpenDeals = [];
+  h.state.dealInsertCalls = [];
+  h.state.dealInsertError = null;
+  h.state.logUpdateCalls = [];
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -296,6 +316,127 @@ function customStep(field: string, value: string) {
     step_config: { field, value },
   };
 }
+
+function dealStep(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "s1",
+    automation_id: "a1",
+    step_type: "create_deal",
+    position: 0,
+    parent_step_id: null,
+    step_config: { pipeline_id: "p1", stage_id: "st1", title: "Novo Lead", value: 0, ...overrides },
+  };
+}
+
+describe("create_deal", () => {
+  it("creates a deal with the configured pipeline/stage/title", async () => {
+    h.state.owned = { id: "c1", name: "Alisson", phone: "+5511999999999" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [dealStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "first_inbound_message",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.dealInsertCalls).toHaveLength(1);
+    expect(h.state.dealInsertCalls[0]).toMatchObject({
+      pipeline_id: "p1",
+      stage_id: "st1",
+      contact_id: "c1",
+      title: "Novo Lead",
+    });
+  });
+
+  it("interpolates {{contact.name}} into the deal title", async () => {
+    h.state.owned = { id: "c1", name: "Alisson", phone: "+5511999999999" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [dealStep({ title: "Lead: {{contact.name}}" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "first_inbound_message",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.dealInsertCalls[0]).toMatchObject({ title: "Lead: Alisson" });
+  });
+
+  it("falls back to phone in {{contact.name}} when the contact has no name", async () => {
+    h.state.owned = { id: "c1", name: null, phone: "+5511999999999" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [dealStep({ title: "Lead: {{contact.name}}" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "first_inbound_message",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.dealInsertCalls[0]).toMatchObject({ title: "Lead: +5511999999999" });
+  });
+
+  it("skips creating a duplicate when the contact already has an open deal in the same pipeline", async () => {
+    h.state.owned = { id: "c1", name: "Alisson", phone: "+5511999999999" };
+    h.state.existingOpenDeals = [{ id: "existing-deal" }];
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [dealStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "first_inbound_message",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.dealInsertCalls).toHaveLength(0);
+  });
+
+  it("still skips when the contact already has MULTIPLE open deals in the pipeline (regression: .maybeSingle() used to throw on 2+ rows and silently fall through to another insert)", async () => {
+    h.state.owned = { id: "c1", name: "Alisson", phone: "+5511999999999" };
+    h.state.existingOpenDeals = [{ id: "dupe-1" }, { id: "dupe-2" }, { id: "dupe-3" }];
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [dealStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "first_inbound_message",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.dealInsertCalls).toHaveLength(0);
+  });
+
+  it("treats a unique-violation on insert (DB-level dedup index, migration 047) as an expected skip, not a failure — a race lost between the pre-insert check and the insert itself", async () => {
+    h.state.owned = { id: "c1", name: "Alisson", phone: "+5511999999999" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [dealStep()];
+    h.state.dealInsertError = { code: "23505", message: "duplicate key value violates unique constraint \"idx_deals_contact_pipeline_open\"" };
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "first_inbound_message",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.dealInsertCalls).toHaveLength(1);
+    const lastLogUpdate = h.state.logUpdateCalls[h.state.logUpdateCalls.length - 1] as {
+      status: string;
+      steps_executed: { status: string; detail: string }[];
+    };
+    expect(lastLogUpdate.status).toBe("success");
+    // Must NOT claim "deal created" — the DB rejected it as a duplicate.
+    expect(lastLogUpdate.steps_executed[0].status).toBe("success");
+    expect(lastLogUpdate.steps_executed[0].detail).not.toMatch(/deal created/i);
+    expect(lastLogUpdate.steps_executed[0].detail).toMatch(/already exists|duplicate|skip/i);
+  });
+});
 
 describe("triggerMatches — interactive_reply", () => {
   function automation(reply_ids: string[]): Automation {

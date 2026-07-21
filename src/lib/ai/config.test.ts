@@ -27,6 +27,7 @@ const ROW = {
   is_active: false,
   auto_reply_enabled: false,
   auto_reply_max_per_conversation: 3,
+  reply_delay_seconds: 4,
   embeddings_api_key: null,
 }
 
@@ -62,5 +63,14 @@ describe('loadAiConfig requireActive', () => {
       { requireActive: false },
     )
     expect(config!.baseUrl).toBe('https://api.groq.com/openai/v1')
+  })
+
+  it('maps reply_delay_seconds through to replyDelaySeconds', async () => {
+    const config = await loadAiConfig(
+      dbReturning({ ...ROW, reply_delay_seconds: 7 }),
+      'acct',
+      { requireActive: false },
+    )
+    expect(config!.replyDelaySeconds).toBe(7)
   })
 })

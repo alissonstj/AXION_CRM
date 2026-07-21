@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
@@ -14,6 +14,9 @@ import {
   ImageOff,
   CornerDownLeft,
   Sparkles,
+  Download,
+  Play,
+  Pause,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -28,6 +31,12 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** Contact/group avatar — shown next to received voice notes,
+   *  matching WhatsApp Web's voice-message layout. */
+  contactAvatarUrl?: string | null;
+  /** Current agent's own avatar — shown next to voice notes THEY sent,
+   *  mirroring `contactAvatarUrl` on the other side of the thread. */
+  ownAvatarUrl?: string | null;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -47,6 +56,24 @@ function StatusIcon({ status }: { status: Message["status"] }) {
   }
 }
 
+// `<audio controls>`/`<video controls>` get a download affordance for
+// free from the browser's native player chrome; a plain `<img>` has
+// none. This fetches the file fresh and forces a real "Save As" via a
+// same-origin blob + temporary anchor — the `download` attribute is
+// silently ignored by browsers on a direct cross-origin URL (Supabase
+// Storage) unless the response sets `Content-Disposition: attachment`,
+// which it doesn't.
+async function downloadImageFile(url: string) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = url.split("/").pop() || "image";
+  a.click();
+  URL.revokeObjectURL(blobUrl);
+}
+
 function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof useTranslations> }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -56,7 +83,7 @@ function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof us
   );
 }
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
+function MediaImage({ url, alt, downloadLabel }: { url: string; alt: string; downloadLabel: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -110,16 +137,213 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
-    />
+    <div className="group relative inline-block">
+      <img
+        src={src ?? ""}
+        alt={alt}
+        className="max-h-64 max-w-60 rounded-lg object-cover"
+        onError={() => setError(true)}
+      />
+      <button
+        type="button"
+        onClick={() => downloadImageFile(url)}
+        title={downloadLabel}
+        aria-label={downloadLabel}
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover:opacity-100"
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Bars are laid out with flex-1 (not a fixed width) so they always
+// exactly fill the available track width regardless of the bubble's
+// avatar/timestamp layout — a fixed px width per bar previously
+// overflowed its container and got clipped out of view entirely.
+const WAVEFORM_BARS = 32;
+
+// WhatsApp Web renders voice notes as a play button + amplitude
+// waveform + running clock, not a native <audio controls> bar. Evolution
+// and Meta don't hand us WhatsApp's own waveform sample bytes (see
+// evolution.ts's audioMessage mapping — only mimetype is captured), so
+// bars are computed client-side by decoding the audio once with the Web
+// Audio API. Playback itself still goes through a real (hidden) <audio>
+// element — only the visual chrome around it is custom.
+function VoiceMessagePlayer({
+  url,
+  isAgent,
+  avatarUrl,
+}: {
+  url: string;
+  isAgent: boolean;
+  avatarUrl?: string | null;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [bars, setBars] = useState<number[] | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function computeWaveform() {
+      try {
+        const res = await fetch(url);
+        const arrayBuffer = await res.arrayBuffer();
+        const ctx = new AudioContext();
+        const decoded = await ctx.decodeAudioData(arrayBuffer);
+        const channel = decoded.getChannelData(0);
+        const blockSize = Math.max(1, Math.floor(channel.length / WAVEFORM_BARS));
+        const computed: number[] = [];
+        for (let i = 0; i < WAVEFORM_BARS; i++) {
+          let max = 0;
+          for (let j = 0; j < blockSize; j++) {
+            const v = Math.abs(channel[i * blockSize + j] ?? 0);
+            if (v > max) max = v;
+          }
+          computed.push(max);
+        }
+        const peak = Math.max(...computed, 0.01);
+        void ctx.close();
+        if (!cancelled) setBars(computed.map((v) => v / peak));
+      } catch {
+        // Unsupported codec / network hiccup — fall back to a generic
+        // waveform shape rather than blocking playback on it.
+        if (!cancelled) {
+          setBars(Array.from({ length: WAVEFORM_BARS }, (_, i) => 0.35 + 0.5 * Math.abs(Math.sin(i))));
+        }
+      }
+    }
+
+    void computeWaveform();
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      void audio.play();
+    }
+  };
+
+  const seekTo = (fraction: number) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    audio.currentTime = fraction * duration;
+  };
+
+  const progress = duration > 0 ? currentTime / duration : 0;
+  const displaySeconds = isPlaying || currentTime > 0 ? currentTime : duration;
+
+  return (
+    <div className="flex items-center gap-2">
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+      ) : (
+        <div className="h-6 w-6 shrink-0 rounded-full bg-muted" />
+      )}
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="metadata"
+        className="hidden"
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        }}
+      />
+      <button
+        type="button"
+        onClick={togglePlay}
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+          isAgent
+            ? "bg-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_15%,transparent)] text-[var(--wa-bubble-sent-fg)]"
+            : "bg-primary/15 text-primary",
+        )}
+      >
+        {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 translate-x-px" />}
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div
+          className="relative flex h-5 w-full cursor-pointer items-center gap-[2px]"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            seekTo(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
+          }}
+        >
+          {(bars ?? Array.from({ length: WAVEFORM_BARS }, () => 0.3)).map((height, i) => {
+            const played = i / WAVEFORM_BARS < progress;
+            return (
+              <span
+                key={i}
+                className={cn(
+                  "min-w-[1.5px] flex-1 rounded-full",
+                  played
+                    ? isAgent
+                      ? "bg-[var(--wa-bubble-sent-fg)]"
+                      : "bg-primary"
+                    : isAgent
+                      ? "bg-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_35%,transparent)]"
+                      : "bg-muted-foreground/30",
+                )}
+                style={{ height: `${Math.max(15, height * 100)}%` }}
+              />
+            );
+          })}
+          {/* Playhead line — slides across the waveform in sync with
+              currentTime, on top of the played/unplayed bar coloring. */}
+          <span
+            className={cn(
+              "pointer-events-none absolute top-1/2 h-full w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-100 ease-linear",
+              isAgent ? "bg-[var(--wa-bubble-sent-fg)]" : "bg-primary",
+            )}
+            style={{ left: `${Math.min(100, Math.max(0, progress * 100))}%` }}
+          />
+        </div>
+        <span
+          className={cn(
+            "text-[10px]",
+            isAgent ? "text-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_65%,transparent)]" : "text-muted-foreground",
+          )}
+        >
+          {formatDuration(displaySeconds)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MessageContent({
+  message,
+  t,
+  isAgent,
+  avatarUrl,
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  isAgent: boolean;
+  avatarUrl?: string | null;
+}) {
   switch (message.content_type) {
     case "text":
       return (
@@ -132,7 +356,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+            <MediaImage url={message.media_url} alt="Shared image" downloadLabel={t("downloadImage")} />
           ) : (
             <MediaUnavailable label={t("photo")} t={t} />
           )}
@@ -166,11 +390,18 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
 
     case "audio":
       return (
-        <div>
+        <div className="w-[240px] max-w-full">
           {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+            <VoiceMessagePlayer url={message.media_url} isAgent={isAgent} avatarUrl={avatarUrl} />
           ) : (
             <MediaUnavailable label={t("audio")} t={t} />
+          )}
+          {/* Whisper transcript (Fase 1 — investigacao-transcricao-audio-ia.md),
+              saved into content_text same as an image/video caption. */}
+          {message.content_text && (
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+              {message.content_text}
+            </p>
           )}
         </div>
       );
@@ -264,11 +495,14 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  contactAvatarUrl,
+  ownAvatarUrl,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
+  const avatarUrl = isAgent ? ownAvatarUrl : contactAvatarUrl;
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -282,11 +516,25 @@ export function MessageBubble({
       <div
         className={cn(
           "relative rounded-2xl px-3 py-2",
+          // Fixed WhatsApp bubble colors (globals.css --wa-bubble-* tokens),
+          // not `bg-primary`/`bg-muted` — these are WhatsApp's own sent/
+          // received identity colors, not the user's chosen accent theme
+          // or the app's generic neutral surface. Mode-aware via the
+          // `[data-mode]`-scoped CSS vars, NOT Tailwind's `dark:` variant
+          // (this app doesn't use a `.dark` class — see globals.css).
           isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
+            ? "rounded-br-md bg-[var(--wa-bubble-sent-bg)] text-[var(--wa-bubble-sent-fg)]"
+            : "rounded-bl-md bg-[var(--wa-bubble-received-bg)] text-foreground",
         )}
       >
+        {/* Group sender label — WhatsApp shows who in the group sent an
+            incoming message above its bubble. Only for participant
+            (non-agent) messages that carry a participant name. */}
+        {!isAgent && message.sender_participant_name && (
+          <div className="mb-0.5 text-xs font-semibold text-primary">
+            {message.sender_participant_name}
+          </div>
+        )}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}
@@ -294,7 +542,7 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} />
+        <MessageContent message={message} t={t} isAgent={isAgent} avatarUrl={avatarUrl} />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",
@@ -307,7 +555,7 @@ export function MessageBubble({
               glance. */}
           {message.ai_generated && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
+              className="inline-flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_15%,transparent)] px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-[var(--wa-bubble-sent-fg)]"
               title={t("aiBadgeTitle")}
             >
               <Sparkles className="h-2.5 w-2.5" />
@@ -317,11 +565,13 @@ export function MessageBubble({
           <span
             className={cn(
               "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              // Outbound bubbles sit on the fixed WhatsApp green fill, so
+              // the timestamp must read against that (not the neutral
+              // foreground) — otherwise it goes low-contrast. Inbound
+              // bubbles use the muted surface.
+              isAgent
+                ? "text-[color-mix(in_srgb,var(--wa-bubble-sent-fg)_65%,transparent)]"
+                : "text-muted-foreground",
             )}
           >
             {time}

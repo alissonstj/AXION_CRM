@@ -12,7 +12,8 @@ import type { Conversation, Message } from '@/types';
 
 export interface ApiConversation {
   id: string;
-  contact_id: string;
+  /** Null for a group conversation (migration 046). */
+  contact_id: string | null;
   status: string;
   assigned_agent_id: string | null;
   last_message_text: string | null;
@@ -22,7 +23,9 @@ export interface ApiConversation {
   updated_at: string;
   contact: {
     id: string;
-    phone: string;
+    /** Null for a contact WhatsApp only ever addressed by @lid, with
+     *  no phone-number alt provided (migration 051). */
+    phone: string | null;
     name: string | null;
     email: string | null;
     company: string | null;

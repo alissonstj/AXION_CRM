@@ -31,18 +31,22 @@ function formatScheduledAt(iso: string): string {
 export interface ScheduledMessagesListModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  conversationId: string;
+  /** Kanban entry point — pass exactly one of `dealId`/`conversationId`,
+   *  never both (mirrors ScheduleMessageModal's own props). */
+  dealId?: string;
+  /** Inbox entry point. */
+  conversationId?: string;
 }
 
 /**
- * Lists this conversation's pending scheduled follow-ups, with a
- * cancel action per row. Scoped to one conversation only — not a
- * cross-account admin view (see the closed plan's explicit scope
- * decision).
+ * Lists this lead's pending scheduled follow-ups, with a cancel action
+ * per row. Scoped to one deal/conversation only — not a cross-account
+ * admin view (see the closed plan's explicit scope decision).
  */
 export function ScheduledMessagesListModal({
   open,
   onOpenChange,
+  dealId,
   conversationId,
 }: ScheduledMessagesListModalProps) {
   // Parent namespace, not just "Scheduling.list" — the content-type
@@ -71,16 +75,16 @@ export function ScheduledMessagesListModal({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/scheduled-messages?conversation_id=${encodeURIComponent(conversationId)}`,
-        { cache: "no-store" },
-      );
+      const query = conversationId
+        ? `conversation_id=${encodeURIComponent(conversationId)}`
+        : `deal_id=${encodeURIComponent(dealId as string)}`;
+      const res = await fetch(`/api/scheduled-messages?${query}`, { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setItems((data.scheduled_messages as ScheduledMessage[]) ?? []);
     } finally {
       setLoading(false);
     }
-  }, [conversationId]);
+  }, [dealId, conversationId]);
 
   useEffect(() => {
     if (open) void load();

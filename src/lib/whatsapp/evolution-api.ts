@@ -50,7 +50,6 @@ function headers(apiKey: string): Record<string, string> {
 
 export interface CreateEvolutionInstanceArgs extends EvolutionAuth {
   instanceName: string;
-  webhookUrl: string;
 }
 export interface EvolutionCreateResult {
   token: string;
@@ -59,11 +58,22 @@ export interface EvolutionCreateResult {
 }
 
 /** POST /instance/create. Uses the caller's `apiKey` — Task 6's factory
- *  passes the global EVOLUTION_API_KEY here (admin action). */
+ *  passes the global EVOLUTION_API_KEY here (admin action).
+ *
+ *  Deliberately does NOT register a webhook here — `/instance/create`
+ *  starts the Baileys channel synchronously and can fire
+ *  `qrcode.updated` before this call's own HTTP response even returns
+ *  to the caller, i.e. before there's been any chance to persist the
+ *  new instance token anywhere the webhook route could look it up.
+ *  Registering the webhook at creation time guaranteed a 401 on that
+ *  very first delivery — confirmed live 2026-07-15, reproduced 4/4
+ *  times, each one spiraling into a Baileys channel restart loop. The
+ *  fix: create with no webhook, let the caller persist the token, THEN
+ *  call `setEvolutionWebhook` below. */
 export async function createEvolutionInstance(
   args: CreateEvolutionInstanceArgs,
 ): Promise<EvolutionCreateResult> {
-  const { baseUrl, apiKey, instanceName, webhookUrl } = args;
+  const { baseUrl, apiKey, instanceName } = args;
   const response = await fetch(`${baseUrl}/instance/create`, {
     method: 'POST',
     headers: headers(apiKey),
@@ -71,17 +81,53 @@ export async function createEvolutionInstance(
       instanceName,
       qrcode: true,
       integration: 'WHATSAPP-BAILEYS',
-      webhook: {
-        url: webhookUrl,
-        byEvents: false,
-        base64: true,
-        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
-      },
     }),
   });
   if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
   const data = await response.json();
   return { token: data.hash, qrCode: data.qrcode?.base64 };
+}
+
+export interface SetEvolutionWebhookArgs extends EvolutionAuth {
+  instanceName: string;
+  webhookUrl: string;
+}
+
+/** POST /webhook/set/{instance}. Call ONLY after the instance's token
+ *  has been durably persisted (see createEvolutionInstance's doc
+ *  comment) — this is what actually turns on event delivery, so
+ *  calling it any earlier reopens the exact race that function exists
+ *  to avoid. */
+export async function setEvolutionWebhook(args: SetEvolutionWebhookArgs): Promise<void> {
+  const { baseUrl, apiKey, instanceName, webhookUrl } = args;
+  const response = await fetch(`${baseUrl}/webhook/set/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({
+      webhook: {
+        enabled: true,
+        url: webhookUrl,
+        byEvents: false,
+        base64: true,
+        // Note: we deliberately do NOT subscribe to CHATS_UPSERT/
+        // CHATS_UPDATE. They were trialled to mirror a chat's `pinned`
+        // state, but a live capture (2026-07-16) proved Evolution strips
+        // `pinned` from the Baileys event before forwarding — the payload
+        // carries only remoteJid + instanceId — and its Chat table has no
+        // pinned column either. So pinned is unobtainable via Evolution
+        // and the extra events would just be noise.
+        //
+        // PRESENCE_UPDATE IS subscribed — confirmed live 2026-07-17 that
+        // Evolution forwards Baileys "composing"/"available"/"paused"/
+        // "unavailable" presence reports (unlike pinned above, this one's
+        // real and used — see handleEvolutionPresenceUpdate, migration
+        // 049 — to show "digitando…" in the inbox when the CUSTOMER is
+        // typing).
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'PRESENCE_UPDATE'],
+      },
+    }),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
 }
 
 export interface ConnectEvolutionInstanceArgs extends EvolutionAuth {
@@ -265,6 +311,136 @@ export async function sendEvolutionPresence(args: SendEvolutionPresenceArgs): Pr
     body: JSON.stringify({ number: to, presence, delay }),
   });
   if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+}
+
+// ============================================================
+// Retroactive history — one-time backfill on connect (see
+// src/lib/channels/history-backfill.ts), NOT the steady-state webhook
+// path. Response shapes confirmed live 2026-07-15 against a real
+// connected instance (1,678 chats / 15,837 messages on record).
+// ============================================================
+
+export interface FindEvolutionChatsArgs extends EvolutionAuth {
+  instanceName: string;
+}
+export interface EvolutionChatSummary {
+  remoteJid: string;
+  /** For a group chat (@g.us), findChats returns the group's name here.
+   *  Used by the history backfill to name the group conversation without
+   *  a second findGroupInfos call. */
+  pushName?: string | null;
+  lastMessage?: { messageTimestamp: number } | null;
+}
+
+/** POST /chat/findChats/{instance}. No filter body — returns every
+ *  chat (paginated server-side at 100/page; see history-backfill.ts
+ *  for how the caller pages through the full set). */
+export async function findEvolutionChats(
+  args: FindEvolutionChatsArgs,
+): Promise<EvolutionChatSummary[]> {
+  const { baseUrl, apiKey, instanceName } = args;
+  const response = await fetch(`${baseUrl}/chat/findChats/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+  return (await response.json()) as EvolutionChatSummary[];
+}
+
+export interface EvolutionContactSummary {
+  remoteJid: string;
+  /** The contact's display name. For a saved contact this is the
+   *  address-book name the owner set (what WhatsApp Web shows) — NOT the
+   *  per-message pushName (which is the self-set name / often just the
+   *  number). Empty string when WhatsApp has no name on record. */
+  pushName: string;
+  isSaved?: boolean;
+  /** Profile picture URL, when WhatsApp has one on record. Confirmed
+   *  live 2026-07-16: present for ~2/3 of real contacts in the same
+   *  findContacts response the name comes from — the one-time history
+   *  backfill reuses this instead of a separate per-contact
+   *  fetchProfilePictureUrl call. */
+  profilePicUrl?: string | null;
+}
+
+/** POST /chat/findContacts/{instance}. No filter body — returns every
+ *  known contact (address book + anyone messaged). Its `pushName` is the
+ *  authoritative address-book name; the per-message pushName in the
+ *  webhook/findMessages is not. Confirmed live 2026-07-16: recovered
+ *  real names ("Ana Luiza", "Elsin Silva") for contacts whose message
+ *  pushName was empty or the bare number. */
+export async function findEvolutionContacts(
+  args: FindEvolutionChatsArgs,
+): Promise<EvolutionContactSummary[]> {
+  const { baseUrl, apiKey, instanceName } = args;
+  const response = await fetch(`${baseUrl}/chat/findContacts/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+  return (await response.json()) as EvolutionContactSummary[];
+}
+
+export interface FindEvolutionMessagesArgs extends EvolutionAuth {
+  instanceName: string;
+  remoteJid: string;
+  /** 1-based; Evolution paginates findMessages results. Defaults to 1. */
+  page?: number;
+}
+export interface EvolutionMessagesPage {
+  total: number;
+  pages: number;
+  currentPage: number;
+  /** Same wire shape Evolution's `messages.upsert` webhook delivers a
+   *  single record as — see EvolutionUpsertData in
+   *  src/lib/channels/providers/evolution.ts, whose exported
+   *  `mapEvolutionMessage` this reuses for the backfill. */
+  records: Record<string, unknown>[];
+}
+
+/** POST /chat/findMessages/{instance}. `where.key.remoteJid` scopes to
+ *  one chat — confirmed live 2026-07-15 (a 141-message chat paginated
+ *  at 3 pages). */
+export async function findEvolutionMessages(
+  args: FindEvolutionMessagesArgs,
+): Promise<EvolutionMessagesPage> {
+  const { baseUrl, apiKey, instanceName, remoteJid, page = 1 } = args;
+  const response = await fetch(`${baseUrl}/chat/findMessages/${instanceName}`, {
+    method: 'POST',
+    headers: headers(apiKey),
+    body: JSON.stringify({ where: { key: { remoteJid } }, page }),
+  });
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+  const data = await response.json();
+  return data.messages as EvolutionMessagesPage;
+}
+
+export interface FetchEvolutionGroupInfoArgs extends EvolutionAuth {
+  instanceName: string;
+  groupJid: string;
+}
+export interface EvolutionGroupInfo {
+  subject: string | null;
+  pictureUrl: string | null;
+}
+
+/** GET /group/findGroupInfos/{instance}?groupJid=... — the group's
+ *  subject (name) and picture. Confirmed live 2026-07-16 (returned
+ *  subject + 18 participants). Best-effort: the caller falls back to a
+ *  null name rather than blocking ingestion when this fails. */
+export async function fetchEvolutionGroupInfo(
+  args: FetchEvolutionGroupInfoArgs,
+): Promise<EvolutionGroupInfo> {
+  const { baseUrl, apiKey, instanceName, groupJid } = args;
+  const response = await fetch(
+    `${baseUrl}/group/findGroupInfos/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`,
+    { method: 'GET', headers: headers(apiKey) },
+  );
+  if (!response.ok) await throwEvolutionError(response, `Evolution API error: ${response.status}`);
+  const data = await response.json();
+  return { subject: data.subject ?? null, pictureUrl: data.pictureUrl ?? null };
 }
 
 export interface FetchEvolutionProfilePictureArgs extends EvolutionAuth {

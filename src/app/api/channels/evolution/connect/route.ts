@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption';
 import { EvolutionProvider } from '@/lib/channels/providers/evolution';
-import { createEvolutionInstance, connectEvolutionInstance } from '@/lib/whatsapp/evolution-api';
+import { createEvolutionInstance, connectEvolutionInstance, setEvolutionWebhook } from '@/lib/whatsapp/evolution-api';
 
 async function resolveAccountId(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -41,8 +41,16 @@ export async function POST(_request: Request) {
 
   try {
     if (isNewInstance) {
+      // No webhook block here — see createEvolutionInstance's own doc
+      // comment. /instance/create starts the Baileys channel
+      // synchronously and can fire qrcode.updated before this call's
+      // response even returns, i.e. before the token below has been
+      // saved anywhere the webhook route could look it up. Confirmed
+      // live 2026-07-15: registering the webhook at creation time 401'd
+      // on that very first delivery every single time, and each 401
+      // spiraled into a full channel restart loop.
       const result = await createEvolutionInstance({
-        baseUrl, apiKey: process.env.EVOLUTION_API_KEY!, instanceName, webhookUrl,
+        baseUrl, apiKey: process.env.EVOLUTION_API_KEY!, instanceName,
       });
       instanceToken = result.token;
       qrCode = result.qrCode;
@@ -79,6 +87,19 @@ export async function POST(_request: Request) {
   if (upsertError) {
     console.error('[evolution connect] failed to save config:', upsertError);
     return NextResponse.json({ error: 'Failed to save connection state' }, { status: 500 });
+  }
+
+  // Only now — token durably saved — is it safe to let Evolution start
+  // delivering events for this instance. Best-effort: a failure here
+  // must not block the QR the user is waiting to scan; the
+  // connection.update handler re-arms nothing on its own, so a failed
+  // enable here does mean the instance won't sync until the user
+  // retries connect (surfaced as a console error, not a user-facing
+  // one — same ack-and-log posture as the rest of this integration).
+  try {
+    await setEvolutionWebhook({ baseUrl, apiKey: instanceToken, instanceName, webhookUrl });
+  } catch (err) {
+    console.error('[evolution connect] failed to enable webhook:', err);
   }
 
   return NextResponse.json({ status: 'connecting', qrCode: qrCode ?? null }, { status: 200 });
@@ -119,9 +140,20 @@ export async function DELETE(_request: Request) {
     }
   }
 
+  // Clear the token along with the state — disconnect() just deleted the
+  // instance in Evolution itself, so leaving the old token in place would
+  // make the next POST's `isNewInstance = !existing?.evolution_instance_token`
+  // wrongly read "still exists" and call connectEvolutionInstance against
+  // an instance Evolution no longer has, failing with "instance does not
+  // exist" (reproduced live 2026-07-17). Clearing it here is what makes
+  // the next connect attempt correctly create a fresh one instead.
   await supabase
     .from('whatsapp_config')
-    .update({ evolution_connection_state: 'disconnected', evolution_qr_code: null })
+    .update({
+      evolution_connection_state: 'disconnected',
+      evolution_qr_code: null,
+      evolution_instance_token: null,
+    })
     .eq('account_id', accountId);
 
   return NextResponse.json({ status: 'disconnected' }, { status: 200 });

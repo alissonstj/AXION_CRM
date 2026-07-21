@@ -27,6 +27,10 @@ export interface AiConfig {
   isActive: boolean
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number
+  /** Seconds to wait before sending an auto-reply — simulates typing
+   *  instead of an instant response. Configurable in Settings → AI;
+   *  migration 050. */
+  replyDelaySeconds: number
   /** Where auto-reply hands a conversation off when the model bails: an
    *  agent's `auth.users.id`, or null to leave it unassigned (drop into
    *  the shared queue). */

@@ -227,3 +227,71 @@ export const CONNECTION_UPDATE_ERROR_SAMPLE = {
   instance: 'axion-test',
   data: { instance: 'axion-test', state: 'refused', statusReason: 428 },
 };
+
+// ---- LID addressing (WhatsApp's newer @lid identifier) ----
+// Real shape captured 2026-07-16 from the connected instance: recent
+// inbound messages arrive keyed by @lid, but carry the real phone JID
+// in `remoteJidAlt`. The CRM must resolve the phone from the alt, never
+// treat the LID digits as a phone number.
+
+/** LID-addressed inbound that DOES carry the phone in remoteJidAlt —
+ *  the common live case. `from` must resolve to the alt's phone. */
+export const LID_WITH_ALT_INBOUND_SAMPLE = {
+  event: 'messages.upsert',
+  instance: 'axion-test',
+  data: {
+    key: {
+      remoteJid: '224876350689405@lid',
+      remoteJidAlt: '556183565665@s.whatsapp.net',
+      fromMe: false,
+      id: 'ANON00000000000000000000000000E1',
+      participant: '',
+      addressingMode: 'lid',
+    },
+    pushName: 'Cliente Real',
+    message: { conversation: 'ola via lid' },
+    messageType: 'conversation',
+    messageTimestamp: 1784161200,
+  },
+};
+
+/** LID-addressed inbound with NO phone alt — only the LID is known.
+ *  Per the approved design ("só telefone real, ocultar LID") this
+ *  message has no resolvable phone and must be dropped, never ingested
+ *  under the LID digits. */
+export const LID_NO_ALT_INBOUND_SAMPLE = {
+  event: 'messages.upsert',
+  instance: 'axion-test',
+  data: {
+    key: {
+      remoteJid: '175441461657751@lid',
+      fromMe: false,
+      id: 'ANON00000000000000000000000000E2',
+      participant: '',
+      addressingMode: 'lid',
+    },
+    pushName: '',
+    message: { conversation: 'mensagem so com lid' },
+    messageType: 'conversation',
+    messageTimestamp: 1784161300,
+  },
+};
+
+/** WhatsApp Channel / newsletter broadcast — leaks in as a "contact"
+ *  today because only @g.us is filtered. Must be skipped like groups. */
+export const NEWSLETTER_INBOUND_SAMPLE = {
+  event: 'messages.upsert',
+  instance: 'axion-test',
+  data: {
+    key: {
+      remoteJid: '120363225660181599@newsletter',
+      fromMe: false,
+      id: 'ANON00000000000000000000000000E3',
+      participant: '',
+    },
+    pushName: 'iFood',
+    message: { conversation: 'promo do dia' },
+    messageType: 'conversation',
+    messageTimestamp: 1784161400,
+  },
+};
