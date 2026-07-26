@@ -43,6 +43,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onKeyDown,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
@@ -52,6 +53,23 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        onKeyDown={(event) => {
+          // A modal must not leak keystrokes to page-level keyboard
+          // shortcuts behind it. Concretely: dnd-kit's KeyboardSensor
+          // on the Pipelines board treats Space as "pick up this
+          // draggable card" — it's wired via {...listeners} on a div
+          // that wraps DealCard (pipeline-board.tsx), and this dialog
+          // is portalled but still a REACT descendant of that div (a
+          // portal only changes DOM placement, not React's synthetic
+          // event tree). Every keystroke in this dialog's fields —
+          // Space included — bubbled past the portal into that
+          // handler, so it never inserted a space (confirmed live
+          // 2026-07-26). Escape-to-close still works: Base UI's
+          // dismiss-on-Escape listens on the document directly, not
+          // through this React tree.
+          event.stopPropagation()
+          onKeyDown?.(event)
+        }}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
