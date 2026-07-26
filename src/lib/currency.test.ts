@@ -6,11 +6,20 @@ import {
   formatCurrencyShort,
 } from "./currency";
 
+// formatCurrency intentionally calls Intl.NumberFormat with an
+// `undefined` locale — every call site is a client component, so this
+// picks up the *viewer's own browser* locale (the right, respectful
+// behavior for an international audience), not this test runner's
+// environment. Different locales group "1234" as "1,234" (en-US),
+// "1.234" (pt-BR), "1 234" (fr-FR), etc. — this checks that some
+// grouping separator sits between the two digit groups, without
+// pinning the test to one specific locale's character.
+const GROUPED_1234 = /1[.,\s ']234/;
+
 describe("formatCurrency", () => {
   it("formats whole amounts with no minor units", () => {
-    // Use a non-breaking-space-tolerant check: Intl may insert NBSP.
     const out = formatCurrency(1234, "USD");
-    expect(out).toContain("1,234");
+    expect(out).toMatch(GROUPED_1234);
     expect(out).not.toContain(".00");
   });
 
@@ -30,13 +39,13 @@ describe("formatCurrency", () => {
     // Intl is lenient here — it uses the code as the symbol.
     const out = formatCurrency(1234, "ZZZ");
     expect(out).toContain("ZZZ");
-    expect(out).toContain("1,234");
+    expect(out).toMatch(GROUPED_1234);
   });
 
   it("never throws on a structurally invalid code (no DB CHECK on deals.currency)", () => {
     for (const bad of ["United States", "US", "USDD", "12", "u$d"]) {
       expect(() => formatCurrency(1234, bad)).not.toThrow();
-      expect(formatCurrency(1234, bad)).toContain("1,234");
+      expect(formatCurrency(1234, bad)).toMatch(GROUPED_1234);
     }
   });
 

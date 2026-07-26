@@ -17,17 +17,32 @@ import {
   Plus,
   Pencil,
   X,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Called after the contact (and everything cascaded off it —
+   *  conversation, messages, deals, notes) is deleted, so the parent
+   *  can clear the now-invalid active conversation. */
+  onContactDeleted?: () => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, onContactDeleted }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -48,6 +63,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [nameDraft, setNameDraft] = useState("");
   const [nameOverride, setNameOverride] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -157,7 +174,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     const supabase = createClient();
     const { error } = await supabase
       .from("contacts")
-      .update({ name: trimmed, updated_at: new Date().toISOString() })
+      // name_edited_manually (migration 052) locks this name against
+      // ingest.ts's WhatsApp-pushName sync — otherwise the next
+      // inbound/backfilled message reverts the edit.
+      .update({ name: trimmed, name_edited_manually: true, updated_at: new Date().toISOString() })
       .eq("id", contact.id);
     setSavingName(false);
     if (!error) {
@@ -165,6 +185,28 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       setEditingName(false);
     }
   }, [contact, nameDraft]);
+
+  // Cascades in the DB (migration 001): deleting a contact also deletes
+  // its conversation, messages, deals, and notes (ON DELETE CASCADE) —
+  // same destructive scope as the existing delete action on the
+  // Contacts page, just reachable from the conversation panel too.
+  const handleDeleteContact = useCallback(async () => {
+    if (!contact) return;
+    setDeleting(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("contacts")
+      .delete()
+      .eq("id", contact.id);
+    setDeleting(false);
+    if (error) {
+      toast.error(tSidebar("toastDeleteFailed"));
+      return;
+    }
+    toast.success(tSidebar("toastDeleted"));
+    setDeleteConfirmOpen(false);
+    onContactDeleted?.();
+  }, [contact, tSidebar, onContactDeleted]);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -437,8 +479,49 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             </div>
           </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDeleteConfirmOpen(true)}
+            className="w-full border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {tSidebar("deleteContact")}
+          </Button>
         </div>
       </ScrollArea>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{tSidebar("deleteContactTitle")}</DialogTitle>
+            <DialogDescription>
+              {tSidebar("deleteContactDesc", { name: displayName })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={deleting}
+            >
+              {tSidebar("cancelEditName")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteContact}
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {tSidebar("deleteBtn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -209,10 +209,17 @@ export function ContactDetailView({
     }
 
     setSavingDetails(true);
+    const trimmedName = editName.trim();
     const { error } = await supabase
       .from('contacts')
       .update({
-        name: editName.trim() || null,
+        name: trimmedName || null,
+        // name_edited_manually (migration 052) locks this name against
+        // ingest.ts's WhatsApp-pushName sync — otherwise the next
+        // inbound/backfilled message reverts the edit. Only locked when
+        // a real name is actually being set; clearing the field back to
+        // empty leaves it free to pick up a pushName again later.
+        ...(trimmedName ? { name_edited_manually: true } : {}),
         phone: editPhone.trim() || null,
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,

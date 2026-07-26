@@ -110,6 +110,10 @@ export interface Contact {
    *  The identifying key in place of `phone` for a LID-only contact. */
   lid?: string | null;
   name?: string;
+  /** True once an agent has edited this contact's name through the CRM
+   *  (migration 052) — ingest.ts's WhatsApp-pushName sync must never
+   *  overwrite `name` again once this is set. */
+  name_edited_manually?: boolean;
   email?: string;
   company?: string;
   avatar_url?: string;

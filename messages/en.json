@@ -384,7 +384,13 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "deleteContact": "Delete contact",
+      "deleteContactTitle": "Delete contact",
+      "deleteContactDesc": "Are you sure you want to delete {name}? Its conversation, messages, deals, and notes will be deleted too. This action cannot be undone.",
+      "deleteBtn": "Delete",
+      "toastDeleted": "Contact deleted.",
+      "toastDeleteFailed": "Could not delete the contact."
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",

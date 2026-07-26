@@ -180,6 +180,38 @@ describe('ingestInbound', () => {
     expect(updates.contacts[0]).toMatchObject({ lid: '224876350689405' });
   });
 
+  it("still syncs the name from WhatsApp's pushName when it differs and the contact's name was never manually edited", async () => {
+    vi.mocked(findExistingContact).mockResolvedValueOnce({
+      id: 'contact-existing', name: 'Ana (velho)', phone: '556183565665',
+      name_edited_manually: false,
+    } as never);
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const updates: Record<string, unknown[]> = { contacts: [] };
+    const db = makeFakeDb(inserts, updates);
+    await ingestInbound(
+      { from: '556183565665', contactName: 'Ana Nova', providerMessageId: 'wamid.namesync',
+        timestamp: new Date(), kind: 'text', text: 'oi' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(updates.contacts[0]).toMatchObject({ name: 'Ana Nova' });
+  });
+
+  it("does not overwrite a manually-edited contact name, even when WhatsApp's pushName differs (investigacao: reconnect reverted edited names)", async () => {
+    vi.mocked(findExistingContact).mockResolvedValueOnce({
+      id: 'contact-existing', name: 'Nome Editado Pelo Agente', phone: '556183565665',
+      name_edited_manually: true,
+    } as never);
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const updates: Record<string, unknown[]> = { contacts: [] };
+    const db = makeFakeDb(inserts, updates);
+    await ingestInbound(
+      { from: '556183565665', contactName: 'PushName Diferente', providerMessageId: 'wamid.namelocked',
+        timestamp: new Date(), kind: 'text', text: 'oi' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(updates.contacts).toHaveLength(0);
+  });
+
   it('creates a contact keyed by LID alone when no phone is resolvable (investigacao-completude-sync-conversas.md — @lid chat with no phone alt)', async () => {
     const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
     const db = makeFakeDb(inserts);
@@ -206,6 +238,23 @@ describe('ingestInbound', () => {
       { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
     );
     expect(inserts.contacts).toHaveLength(0);
+  });
+
+  it('does not overwrite a manually-edited LID-only contact name when a later pushName differs', async () => {
+    vi.mocked(findExistingContactByLid).mockResolvedValueOnce({
+      id: 'contact-lid-existing', name: 'Nome Editado Pelo Agente', phone: null,
+      lid: '175441461657751', name_edited_manually: true,
+    } as never);
+    const inserts: Record<string, unknown[]> = { contacts: [], conversations: [], messages: [] };
+    const updates: Record<string, unknown[]> = { contacts: [] };
+    const db = makeFakeDb(inserts, updates);
+    await ingestInbound(
+      { from: '', contactName: 'PushName Diferente', providerMessageId: 'wamid.lidonly3',
+        timestamp: new Date(), kind: 'text', text: 'de novo', contactLid: '175441461657751' },
+      { accountId: 'acc-1', configOwnerUserId: 'user-1', db },
+    );
+    expect(inserts.contacts).toHaveLength(0);
+    expect(updates.contacts).toHaveLength(0);
   });
 
   it('ingests a group message: creates a group conversation and records the participant sender (no contact created)', async () => {

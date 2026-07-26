@@ -773,9 +773,18 @@ export async function findOrCreateContact(
 
   if (existingContact) {
     // Patch whichever of name/lid changed — a single update, not two
-    // round trips, when both happen to change at once.
+    // round trips, when both happen to change at once. Never touch
+    // `name` once an agent has manually edited it (migration 052) —
+    // otherwise every inbound/backfilled message re-syncs WhatsApp's
+    // own pushName over the correction. Reported live: reconnecting
+    // (which re-runs the history backfill) reverted several
+    // manually-fixed names, while contacts that didn't happen to
+    // receive a message during that window kept the edit — same
+    // unconditional overwrite, just not triggered for those.
     const patch: Record<string, unknown> = {}
-    if (name && name !== existingContact.name) patch.name = name
+    if (name && name !== existingContact.name && !existingContact.name_edited_manually) {
+      patch.name = name
+    }
     if (lid && lid !== existingContact.lid) patch.lid = lid
     if (Object.keys(patch).length > 0) {
       const { error: patchError } = await db
@@ -838,7 +847,8 @@ async function findOrCreateContactByLid(
   const existingContact = await findExistingContactByLid(db, accountId, lid)
 
   if (existingContact) {
-    if (name && name !== existingContact.name) {
+    // See findOrCreateContact's doc comment — same manual-edit lock.
+    if (name && name !== existingContact.name && !existingContact.name_edited_manually) {
       const { error: patchError } = await db
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })

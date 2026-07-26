@@ -24,6 +24,9 @@ export interface ExistingContact {
   /** Null for a LID-only contact — see findExistingContactByLid. */
   phone: string | null;
   name?: string | null;
+  /** True once an agent has edited this contact's name through the CRM
+   *  (migration 052) — callers must not overwrite `name` when set. */
+  name_edited_manually?: boolean;
   [key: string]: unknown;
 }
 

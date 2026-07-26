@@ -922,7 +922,13 @@
       "deals": "Negócios",
       "noTags": "Nenhuma tag",
       "noDeals": "Nenhum negócio",
-      "addNotePlaceholder": "Adicionar uma nota..."
+      "addNotePlaceholder": "Adicionar uma nota...",
+      "deleteContact": "Excluir contato",
+      "deleteContactTitle": "Excluir contato",
+      "deleteContactDesc": "Tem certeza de que deseja excluir {name}? A conversa, mensagens, negócios e notas ligados a ele também serão excluídos. Esta ação não pode ser desfeita.",
+      "deleteBtn": "Excluir",
+      "toastDeleted": "Contato excluído.",
+      "toastDeleteFailed": "Não foi possível excluir o contato."
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",
